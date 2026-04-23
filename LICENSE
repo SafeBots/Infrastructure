@@ -1,0 +1,59 @@
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright 2026 Safebots Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+NOTICE: AI Model Licenses
+
+This project integrates AI models with various open-source licenses:
+
+- Apache 2.0: Qwen models, Gemma 4 models, Mistral models, and others
+- MIT: GLM-5.1, DeepSeek V3.2, Phi models, and others
+- Llama Community License: Llama 4 models (700M MAU restriction)
+- Gemma Terms of Use: Gemma models
+- Custom permissive licenses: Various model-specific licenses
+
+See docs/LICENSE-MODELS.md for complete model license information.
+
+---
+
+NOTICE: Media Tools and Libraries
+
+This project uses media processing tools with LGPL 2.1+ licenses
+via dynamic linking only:
+
+- FFmpeg (LGPL 2.1+, no GPL codecs)
+- libvips (LGPL 2.1+)
+- ImageMagick (Apache-style license, no GPL delegates)
+- PDFium (BSD-3-Clause)
+- LibreOffice (MPL 2.0)
+
+See docs/LICENSE-MEDIA.md for complete media toolchain license information.
+
+---
+
+NOTICE: GPL-Free Guarantee
+
+All runtime components use permissive licenses. No GPL dependencies
+are included in the runtime execution path.
+
+Flagged components (optional):
+- diffusion-small: AGPL (Stable Diffusion)
+- index: SSPL (FalkorDB)
+
+These components are clearly flagged and are optional add-ons.
