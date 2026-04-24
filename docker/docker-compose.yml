@@ -1,0 +1,199 @@
+version: '3.8'
+
+networks:
+  safebox-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: safebox-nginx
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.10
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /safebox/nginx/conf.d:/etc/nginx/conf.d:ro
+      - /safebox/nginx/ssl:/etc/nginx/ssl:ro
+      - /safebox/nginx/www:/var/www:ro
+      - /var/www/qbix:/var/www/qbix:ro
+      - /safebox/nginx/logs:/var/log/nginx
+    labels:
+      safebox.scope: "web.nginx"
+      safebox.governance.m: "3"
+      safebox.governance.n: "5"
+    cpus: 2
+    mem_limit: 2g
+
+  mariadb:
+    image: mariadb:10.11
+    container_name: safebox-mariadb
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.20
+    volumes:
+      - /safebox/mariadb/data:/var/lib/mysql
+      - /safebox/mariadb/conf:/etc/mysql/conf.d:ro
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mariadb_root_password
+    secrets:
+      - mariadb_root_password
+    labels:
+      safebox.scope: "database.mariadb"
+      safebox.governance.m: "4"
+      safebox.governance.n: "5"
+    cpus: 4
+    mem_limit: 16g
+
+  php-fpm:
+    image: php:8.1-fpm
+    container_name: safebox-php-fpm
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.30
+    volumes:
+      - /var/www/qbix:/var/www/qbix:ro
+      - /safebox/php/sessions:/var/lib/php/sessions
+    depends_on:
+      - mariadb
+    labels:
+      safebox.scope: "runtime.php"
+      safebox.governance.m: "3"
+      safebox.governance.n: "5"
+    cpus: 4
+    mem_limit: 8g
+
+  node-exec:
+    image: node:20-alpine
+    container_name: safebox-node-exec
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.40
+    volumes:
+      - /var/www/qbix:/var/www/qbix:ro
+      - /safebox/node/cache:/cache
+    working_dir: /var/www/qbix/platform/plugins/Safebox
+    command: node scripts/executor.js
+    depends_on:
+      - mariadb
+    labels:
+      safebox.scope: "runtime.node"
+      safebox.governance.m: "3"
+      safebox.governance.n: "5"
+    cpus: 4
+    mem_limit: 8g
+
+  llama-server-deepseek:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    container_name: safebox-llama-deepseek
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.50
+    volumes:
+      - /safebox/models/deepseek-r1:/models:ro
+    command: >
+      --model /models/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf
+      --host 0.0.0.0
+      --port 8001
+      --ctx-size 32768
+      --n-gpu-layers 40
+    labels:
+      safebox.scope: "models.deepseek"
+      safebox.governance.m: "2"
+      safebox.governance.n: "3"
+      safebox.governance.exponentialBackoff: "true"
+    cpus: 8
+    mem_limit: 32g
+
+  ffmpeg:
+    image: linuxserver/ffmpeg:latest
+    container_name: safebox-ffmpeg
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.60
+    volumes:
+      - /safebox/ffmpeg/temp:/tmp
+      - /safebox/ffmpeg/output:/output
+    labels:
+      safebox.scope: "media.ffmpeg"
+      safebox.governance.m: "2"
+      safebox.governance.n: "3"
+    cpus: 8
+    mem_limit: 16g
+
+  typesense:
+    image: typesense/typesense:26.0
+    container_name: safebox-typesense
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.70
+    volumes:
+      - /safebox/typesense/data:/data
+    environment:
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_API_KEY_FILE: /run/secrets/typesense_api_key
+    secrets:
+      - typesense_api_key
+    labels:
+      safebox.scope: "search.typesense"
+      safebox.governance.m: "2"
+      safebox.governance.n: "3"
+    cpus: 2
+    mem_limit: 4g
+
+  chromium:
+    image: browserless/chrome:latest
+    container_name: safebox-chromium
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.80
+    volumes:
+      - /safebox/chromium/downloads:/downloads
+    labels:
+      safebox.scope: "browser.chromium"
+      safebox.governance.m: "2"
+      safebox.governance.n: "3"
+    cpus: 2
+    mem_limit: 4g
+
+  system-protocol-api:
+    image: node:20-alpine
+    container_name: safebox-system-api
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.90
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /safebox/system-api/state:/state
+      - /etc/safebox:/config:ro
+      - ./system-protocol-api.js:/app/server.js:ro
+    working_dir: /app
+    command: sh -c "npm install express body-parser dockerode && node server.js"
+    labels:
+      safebox.scope: "system.admin"
+      safebox.governance.m: "5"
+      safebox.governance.n: "7"
+    cpus: 2
+    mem_limit: 2g
+
+secrets:
+  mariadb_root_password:
+    file: /etc/safebox/secrets/mariadb_root_password.txt
+  typesense_api_key:
+    file: /etc/safebox/secrets/typesense_api_key.txt
