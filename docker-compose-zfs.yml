@@ -1,0 +1,184 @@
+version: '3.8'
+
+# Safebox Multi-App Architecture with ZFS Clones
+# Each app runs in its own container with its own ZFS clone
+
+networks:
+  safebox-net:
+    driver: bridge
+
+volumes:
+  safebox-sockets:
+    driver: local
+  mariadb-data:
+  redis-data:
+  model-cache:
+
+services:
+  # =========================================================================
+  # INFRASTRUCTURE
+  # =========================================================================
+  
+  safebox-mariadb:
+    image: mariadb:11.2
+    container_name: safebox-mariadb
+    networks:
+      - safebox-net
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      # MariaDB data on ZFS (for snapshots + replication)
+      - /zpool/mysql-data:/var/lib/mysql
+    restart: unless-stopped
+  
+  safebox-redis:
+    image: redis:7.2
+    container_name: safebox-redis
+    networks:
+      - safebox-net
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+  
+  safebox-nginx:
+    image: nginx:1.25
+    container_name: safebox-nginx
+    networks:
+      - safebox-net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/nginx/sites-enabled:/etc/nginx/sites-enabled
+      - /etc/letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+  
+  # =========================================================================
+  # APP CONTAINERS (Each with ZFS Clone)
+  # =========================================================================
+  
+  safebox-app-safebox:
+    image: qbix/app:latest
+    container_name: safebox-app-safebox
+    networks:
+      - safebox-net
+    user: "1000:1000"
+    environment:
+      APP_NAME: Safebox
+      MYSQL_HOST: safebox-mariadb
+      REDIS_HOST: safebox-redis
+      MYSQL_DB: safebox
+    volumes:
+      # Platform: ZFS clone (read-only)
+      - /zpool/qbix-platform/safebox:/opt/qbix/platform:ro
+      
+      # App data: ZFS dataset (read-write)
+      - /zpool/app-data/safebox:/opt/qbix/app
+      
+      # Shared sockets for model runners
+      - safebox-sockets:/run/safebox/services
+      
+      # Shared keys
+      - /etc/safebox:/etc/safebox:ro
+    restart: unless-stopped
+  
+  # Additional apps (one per community/business)
+  # Uncomment and customize as needed
+  
+  # safebox-app-community-x:
+  #   image: qbix/app:latest
+  #   container_name: safebox-app-community-x
+  #   networks:
+  #     - safebox-net
+  #   user: "1000:1000"
+  #   environment:
+  #     APP_NAME: CommunityX
+  #     MYSQL_HOST: safebox-mariadb
+  #     REDIS_HOST: safebox-redis
+  #     MYSQL_DB: community_x
+  #   volumes:
+  #     - /zpool/qbix-platform/community-x:/opt/qbix/platform:ro
+  #     - /zpool/app-data/community-x:/opt/qbix/app
+  #     - safebox-sockets:/run/safebox/services
+  #     - /etc/safebox:/etc/safebox:ro
+  #   restart: unless-stopped
+  
+  # =========================================================================
+  # MODEL RUNNERS (Shared by all apps via Unix sockets)
+  # =========================================================================
+  
+  safebox-model-llm:
+    image: safebox/vllm:latest
+    container_name: safebox-model-llm
+    networks:
+      - safebox-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    environment:
+      SERVICE_ID: model-llm-1
+      RUNNER_ID: safebox-model-llm-1
+      ENABLE_UNIX_SOCKET: "true"
+      SAFEBOX_SOCKET_PATH: /run/safebox/services/model-llm-1.sock
+      HMAC_KEY_PATH: /etc/safebox/model-api.key
+    volumes:
+      - safebox-sockets:/run/safebox/services
+      - model-cache:/models/cache
+      - /etc/safebox:/etc/safebox:ro
+    command: >
+      --model meta-llama/Llama-3.1-8B-Instruct
+      --gpu-memory-utilization 0.9
+      --max-model-len 32768
+      --enable-prefix-caching
+    restart: unless-stopped
+  
+  safebox-privacy-filter:
+    image: safebox/privacy-filter:latest
+    container_name: safebox-privacy-filter
+    networks:
+      - safebox-net
+    environment:
+      SERVICE_ID: privacy-filter-1
+      RUNNER_ID: safebox-privacy-filter-1
+      ENABLE_UNIX_SOCKET: "true"
+      SAFEBOX_SOCKET_PATH: /run/safebox/services/privacy-filter-1.sock
+      HMAC_KEY_PATH: /etc/safebox/model-api.key
+    volumes:
+      - safebox-sockets:/run/safebox/services
+      - model-cache:/models/cache
+      - /etc/safebox:/etc/safebox:ro
+    restart: unless-stopped
+
+# =============================================================================
+# NOTES
+# =============================================================================
+#
+# ZFS Architecture:
+#
+# 1. Platform clones (read-only):
+#    zpool/qbix-platform@base (snapshot)
+#    ├── zpool/qbix-platform/safebox (clone)
+#    ├── zpool/qbix-platform/community-x (clone)
+#    └── zpool/qbix-platform/community-y (clone)
+#
+# 2. App data (read-write):
+#    zpool/app-data/
+#    ├── safebox/
+#    ├── community-x/
+#    └── community-y/
+#
+# Benefits:
+# - Isolation: Each app in separate container + filesystem
+# - Efficiency: ZFS clones = copy-on-write (nearly free)
+# - Updates: Update base → all apps get changes
+# - Rollback: Snapshot per app, instant rollback
+#
+# Setup:
+# 1. ./scripts/setup-zfs-clones.sh
+# 2. ./scripts/create-app-clone.sh safebox
+# 3. docker-compose -f docker-compose-zfs.yml up -d
+#

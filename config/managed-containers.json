@@ -1,0 +1,231 @@
+{
+  "safebox-mariadb": {
+    "imagePattern": "^mariadb:11\\.[0-9]+$",
+    "allowedActions": ["start", "stop", "status", "restart"],
+    "exponentialBackoff": true
+  },
+  
+  "safebox-app-safebox": {
+    "imagePattern": "^qbix/app:.*$",
+    "allowedActions": ["start", "stop", "status", "restart", "git", "composer", "zfs-rollback", "zfs-snapshot"],
+    "exponentialBackoff": true,
+    "zfsVolumes": {
+      "platform": "zpool/app-safebox-platform",
+      "app": "zpool/app-safebox-data"
+    },
+    "defaultCommands": {
+      "git-clone-platform": {
+        "action": "git",
+        "url": "https://github.com/Qbix/Platform.git",
+        "dest": "/opt/qbix/platform",
+        "commit": "REPLACE_WITH_PLATFORM_COMMIT",
+        "submodules": true,
+        "zfsSnapshot": "after",
+        "description": "Clone Qbix Platform with all plugins, then snapshot"
+      },
+      "git-clone-app": {
+        "action": "git",
+        "url": "https://github.com/Qbix/Safebox-app.git",
+        "dest": "/opt/qbix/app",
+        "commit": "REPLACE_WITH_SAFEBOX_APP_COMMIT",
+        "description": "Clone Safebox app repository"
+      },
+      "git-update-platform": {
+        "action": "git",
+        "repo": "/opt/qbix/platform",
+        "ref": "origin/master",
+        "commit": "REPLACE_WITH_PLATFORM_COMMIT",
+        "submodules": true,
+        "zfsSnapshot": "before",
+        "description": "Update Platform to specific commit (snapshots before update for rollback)"
+      },
+      "git-update-app": {
+        "action": "git",
+        "repo": "/opt/qbix/app",
+        "ref": "origin/master",
+        "commit": "REPLACE_WITH_APP_COMMIT",
+        "description": "Update Safebox app to specific commit"
+      },
+      "git-update-streams-plugin": {
+        "action": "git",
+        "repo": "/opt/qbix/platform",
+        "submodules": ["platform/plugins/Streams"],
+        "commits": {
+          "platform/plugins/Streams": "REPLACE_WITH_STREAMS_COMMIT"
+        },
+        "zfsSnapshot": "before",
+        "description": "Update Streams plugin only"
+      },
+      "zfs-rollback-platform": {
+        "action": "zfs-rollback",
+        "dataset": "zpool/app-safebox-platform",
+        "snapshot": "@before-update",
+        "description": "Rollback platform to previous snapshot"
+      },
+      "zfs-snapshot-platform": {
+        "action": "zfs-snapshot",
+        "dataset": "zpool/app-safebox-platform",
+        "snapshot": "@manual-TIMESTAMP",
+        "description": "Create manual snapshot of platform"
+      }
+    }
+  },
+  
+  "safebox-app-intercoin": {
+    "imagePattern": "^qbix/app:.*$",
+    "allowedActions": ["start", "stop", "status", "restart", "git", "composer", "zfs-rollback", "zfs-snapshot"],
+    "exponentialBackoff": true,
+    "zfsVolumes": {
+      "platform": "zpool/app-intercoin-platform",
+      "app": "zpool/app-intercoin-data"
+    },
+    "defaultCommands": {
+      "git-clone-app": {
+        "action": "git",
+        "url": "https://github.com/Qbix/Intercoin-app.git",
+        "dest": "/opt/qbix/app",
+        "commit": "REPLACE_WITH_INTERCOIN_APP_COMMIT",
+        "description": "Clone Intercoin app"
+      },
+      "git-update-app": {
+        "action": "git",
+        "repo": "/opt/qbix/app",
+        "commit": "REPLACE_WITH_APP_COMMIT",
+        "description": "Update Intercoin app"
+      }
+    }
+  },
+  
+  "safebox-app-groups": {
+    "imagePattern": "^qbix/app:.*$",
+    "allowedActions": ["start", "stop", "status", "restart", "git", "composer", "zfs-rollback", "zfs-snapshot"],
+    "exponentialBackoff": true,
+    "zfsVolumes": {
+      "platform": "zpool/app-groups-platform",
+      "app": "zpool/app-groups-data"
+    },
+    "defaultCommands": {
+      "git-clone-app": {
+        "action": "git",
+        "url": "https://github.com/Qbix/Groups-app.git",
+        "dest": "/opt/qbix/app",
+        "commit": "REPLACE_WITH_GROUPS_APP_COMMIT",
+        "description": "Clone Groups app"
+      }
+    }
+  },
+  
+  "safebox-nginx": {
+    "imagePattern": "^nginx:1\\.[2-9][0-9]$",
+    "allowedActions": ["start", "stop", "status", "restart", "nginx-config", "nginx-cert"],
+    "exponentialBackoff": true,
+    "defaultCommands": {
+      "nginx-enable-safebox": {
+        "action": "nginx-config",
+        "app": "safebox",
+        "domain": "safebox.example.com",
+        "upstreamHost": "safebox-app-safebox",
+        "upstreamPort": 9000,
+        "sslProvider": "letsencrypt",
+        "description": "Enable Safebox app with Let's Encrypt SSL"
+      },
+      "nginx-enable-intercoin": {
+        "action": "nginx-config",
+        "app": "intercoin",
+        "domain": "intercoin.example.com",
+        "upstreamHost": "safebox-app-intercoin",
+        "upstreamPort": 9000,
+        "sslProvider": "cloudflare",
+        "description": "Enable Intercoin app with Cloudflare SSL"
+      },
+      "nginx-enable-groups": {
+        "action": "nginx-config",
+        "app": "groups",
+        "domain": "groups.example.com",
+        "upstreamHost": "safebox-app-groups",
+        "upstreamPort": 9000,
+        "sslProvider": "letsencrypt",
+        "description": "Enable Groups app with Let's Encrypt SSL"
+      }
+    }
+  },
+  
+  "safebox-redis": {
+    "imagePattern": "^redis:[6-7]\\.[0-9]+$",
+    "allowedActions": ["start", "stop", "status", "restart"],
+    "exponentialBackoff": true
+  },
+  
+  "safebox-model-llm": {
+    "imagePattern": "^safebox/vllm:.*$",
+    "allowedActions": ["start", "stop", "status", "restart", "model-load", "model-unload", "cache-flush"],
+    "exponentialBackoff": true,
+    "defaultCommands": {
+      "model-load-llama-70b": {
+        "action": "model-load",
+        "modelId": "meta-llama/Llama-3.1-70B-Instruct",
+        "quantization": "awq-4bit",
+        "maxContextLength": 32768,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load LLaMA 3.1 70B with AWQ 4-bit quantization"
+      },
+      "model-load-llama-8b": {
+        "action": "model-load",
+        "modelId": "meta-llama/Llama-3.1-8B-Instruct",
+        "quantization": "fp16",
+        "maxContextLength": 32768,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load LLaMA 3.1 8B with FP16"
+      },
+      "model-load-mistral": {
+        "action": "model-load",
+        "modelId": "mistralai/Mistral-7B-Instruct-v0.3",
+        "quantization": "awq-4bit",
+        "maxContextLength": 32768,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Mistral 7B Instruct"
+      },
+      "cache-flush-all": {
+        "action": "cache-flush",
+        "scope": "all",
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Flush entire KV cache"
+      },
+      "cache-flush-tenant": {
+        "action": "cache-flush",
+        "scope": "tenant",
+        "tenantId": "REPLACE_WITH_TENANT_ID",
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Flush KV cache for specific tenant"
+      }
+    }
+  },
+  
+  "safebox-model-vision": {
+    "imagePattern": "^safebox/comfyui:.*$",
+    "allowedActions": ["start", "stop", "status", "restart", "model-load"],
+    "exponentialBackoff": true,
+    "defaultCommands": {
+      "model-load-sdxl": {
+        "action": "model-load",
+        "modelId": "stabilityai/stable-diffusion-xl-base-1.0",
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Stable Diffusion XL"
+      }
+    }
+  },
+  
+  "safebox-model-audio": {
+    "imagePattern": "^safebox/whisper:.*$",
+    "allowedActions": ["start", "stop", "status", "restart", "model-load"],
+    "exponentialBackoff": true,
+    "defaultCommands": {
+      "model-load-whisper-large": {
+        "action": "model-load",
+        "modelId": "large-v3",
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Whisper Large V3"
+      }
+    }
+  }
+}

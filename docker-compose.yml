@@ -1,0 +1,223 @@
+version: '3.8'
+
+# Safebox Infrastructure - v1.1 with Unix Domain Sockets
+# All service containers communicate via shared socket volume
+
+networks:
+  safebox-net:
+    driver: bridge
+
+volumes:
+  # Shared volume for Unix domain sockets
+  safebox-sockets:
+    driver: local
+  
+  # Data volumes
+  mariadb-data:
+  redis-data:
+  model-cache:
+  
+  # ZFS volumes for apps (created externally)
+  app-safebox-platform:
+    external: true
+  app-safebox-data:
+    external: true
+
+services:
+  # =========================================================================
+  # CORE SERVICES
+  # =========================================================================
+  
+  safebox-mariadb:
+    image: mariadb:11.2
+    container_name: safebox-mariadb
+    networks:
+      - safebox-net
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: safebox_app
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    restart: unless-stopped
+  
+  safebox-redis:
+    image: redis:7.2
+    container_name: safebox-redis
+    networks:
+      - safebox-net
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+  
+  safebox-nginx:
+    image: nginx:1.25
+    container_name: safebox-nginx
+    networks:
+      - safebox-net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/nginx/sites-enabled:/etc/nginx/sites-enabled
+      - /etc/letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+  
+  # =========================================================================
+  # SAFEBOX APP
+  # =========================================================================
+  
+  safebox-app-safebox:
+    image: qbix/app:latest
+    container_name: safebox-app-safebox
+    networks:
+      - safebox-net
+    user: "1000:1000"  # safebox-app user, member of safebox-services group
+    environment:
+      APP_NAME: Safebox
+      MYSQL_HOST: safebox-mariadb
+      REDIS_HOST: safebox-redis
+    volumes:
+      # ZFS volumes
+      - app-safebox-platform:/opt/qbix/platform
+      - app-safebox-data:/opt/qbix/app
+      
+      # Unix socket volume (v1.1)
+      - safebox-sockets:/run/safebox/services
+      
+      # Infrastructure API access
+      - /run/safebox/system-api.sock:/run/safebox/system-api.sock
+      - /etc/safebox/system-api.key:/etc/safebox/system-api.key:ro
+    restart: unless-stopped
+  
+  # =========================================================================
+  # MODEL RUNNERS (v1.1 - Unix Socket Primary)
+  # =========================================================================
+  
+  safebox-model-llm:
+    image: safebox/vllm:v1.1
+    container_name: safebox-model-llm
+    networks:
+      - safebox-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # GPU 0
+              capabilities: [gpu]
+    environment:
+      # v1.1 transport config
+      SERVICE_ID: model-llm-1
+      RUNNER_ID: safebox-model-llm-1
+      ENABLE_UNIX_SOCKET: "true"
+      SAFEBOX_SOCKET_PATH: /run/safebox/services/model-llm-1.sock
+      ENABLE_TCP: "true"  # Fallback for migration
+      TCP_HOST: 0.0.0.0
+      TCP_PORT: 8080
+      
+      # Security
+      VERIFY_PEERCRED: "false"  # Optional: verify caller UID
+      
+      # Model config
+      VLLM_ENABLE_PREFIX_CACHING: "true"
+      MAX_QUEUE_DEPTH: 16
+      DEFAULT_RATE_LIMIT: 100
+      
+      # Paths
+      HMAC_KEY_PATH: /etc/safebox/model-api.key
+      HF_HOME: /models/cache
+    volumes:
+      # Unix socket volume (v1.1)
+      - safebox-sockets:/run/safebox/services
+      
+      # Model storage and keys
+      - model-cache:/models/cache
+      - /etc/safebox:/etc/safebox:ro
+    command: >
+      --model meta-llama/Llama-3.1-8B-Instruct
+      --gpu-memory-utilization 0.9
+      --max-model-len 32768
+      --enable-prefix-caching
+    # NO ports: section - socket only!
+    # Can expose TCP for debugging: expose: ['8080']
+    restart: unless-stopped
+  
+  safebox-model-vision:
+    image: safebox/comfyui:v1.1
+    container_name: safebox-model-vision
+    networks:
+      - safebox-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']  # GPU 1
+              capabilities: [gpu]
+    environment:
+      SERVICE_ID: model-vision-1
+      RUNNER_ID: safebox-model-vision-1
+      ENABLE_UNIX_SOCKET: "true"
+      SAFEBOX_SOCKET_PATH: /run/safebox/services/model-vision-1.sock
+      ENABLE_TCP: "false"  # Socket-only
+      HMAC_KEY_PATH: /etc/safebox/model-api.key
+    volumes:
+      - safebox-sockets:/run/safebox/services
+      - model-cache:/models/cache
+      - /etc/safebox:/etc/safebox:ro
+    restart: unless-stopped
+  
+  safebox-model-audio:
+    image: safebox/whisper:v1.1
+    container_name: safebox-model-audio
+    networks:
+      - safebox-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['2']  # GPU 2
+              capabilities: [gpu]
+    environment:
+      SERVICE_ID: model-audio-1
+      RUNNER_ID: safebox-model-audio-1
+      ENABLE_UNIX_SOCKET: "true"
+      SAFEBOX_SOCKET_PATH: /run/safebox/services/model-audio-1.sock
+      ENABLE_TCP: "false"
+      HMAC_KEY_PATH: /etc/safebox/model-api.key
+    volumes:
+      - safebox-sockets:/run/safebox/services
+      - model-cache:/models/cache
+      - /etc/safebox:/etc/safebox:ro
+    restart: unless-stopped
+
+# =============================================================================
+# NOTES
+# =============================================================================
+#
+# v1.1 Unix Socket Architecture:
+#
+# 1. All service containers mount the shared 'safebox-sockets' volume
+# 2. Each service creates a Unix socket at /run/safebox/services/<service-id>.sock
+# 3. Safebox-app connects to services via these sockets (not TCP)
+# 4. No network ports exposed except nginx (80/443)
+#
+# Security Benefits:
+# - Unix sockets can't be accidentally exposed to network
+# - Filesystem permissions control access (0660, safebox-services group)
+# - Optional SO_PEERCRED verification of caller UID
+#
+# Migration from v1.0 (TCP):
+# - Set ENABLE_TCP=true on runners during migration
+# - Safebox prefers socket when available, falls back to TCP
+# - Once all Safebox instances updated, set ENABLE_TCP=false
+#
+# Socket Permissions:
+# - Automatically set by runner: chmod 0660, chown safebox-services:safebox-services
+# - Safebox-app runs as user in safebox-services group (can read/write)
+#
+# Debugging:
+# - Can still expose TCP via 'expose: [8080]' (not 'ports:')
+# - Accessible from other containers on safebox-net, not from host
+#

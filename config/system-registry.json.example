@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "dockerode": {
+      "version": "4.0.2",
+      "integrity": "sha512-KqsaR7hFeLa0gytYWZSD8XcvLy5PjO+0gk7E2A7ELl2bqY+AvdBmFZ2DQlDGdm05FcG/Q4a9blTYwJL0s3ioTQ==",
+      "source": "npm",
+      "approvedBy": ["admin1", "admin2", "admin3"],
+      "approvedAt": 1745880000,
+      "reason": "Initial version for production"
+    }
+  },
+  "containers": {
+    "safebox-mariadb": {
+      "imagePattern": "^mariadb:11\\.[0-9]+$",
+      "allowedActions": ["start", "stop", "status", "restart"],
+      "exponentialBackoff": true
+    }
+  }
+}
