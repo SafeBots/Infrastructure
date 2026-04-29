@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Safebox — Multi-Tenant AI Hosting for Communities & Businesses</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;700&family=Archivo+Narrow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:        #15161a;
+  --paper:      #f4ede0;
+  --paper-2:    #ece2cc;
+  --paper-3:    #d9cdb1;
+  --rule:       #1a1b20;
+  --accent:     #b3471f;
+  --accent-2:   #7a2c11;
+  --muted:      #5b5448;
+  --green:      #2f4d2c;
+  --quiet:      #8a8170;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 18px;
+  line-height: 1.55;
+  font-feature-settings: "kern" 1, "liga" 1, "onum" 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image:
+    radial-gradient(rgba(20,15,5,0.04) 1px, transparent 1px),
+    radial-gradient(rgba(20,15,5,0.025) 1px, transparent 1px);
+  background-size: 3px 3px, 7px 7px;
+  background-position: 0 0, 1px 1px;
+  mix-blend-mode: multiply;
+}
+
+.layout {
+  position: relative;
+  z-index: 2;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 56px;
+}
+
+/* ─── masthead ─────────────────────────────────────────────────────── */
+
+.masthead {
+  border-top: 6px solid var(--ink);
+  padding-top: 18px;
+  padding-bottom: 32px;
+  margin-top: 0;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+}
+.masthead::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -4px;
+  height: 1px;
+  background: var(--rule);
+}
+.masthead-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 32px;
+  font-family: 'Archivo Narrow', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 28px;
+}
+.masthead-row .left { font-weight: 600; color: var(--ink); }
+.masthead-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-variation-settings: "opsz" 144;
+  font-size: clamp(42px, 7vw, 84px);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  margin: 0;
+  text-wrap: balance;
+}
+.masthead-title em {
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 500;
+}
+.masthead-deck {
+  font-family: 'Fraunces', serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(19px, 2vw, 24px);
+  line-height: 1.4;
+  margin: 24px 0 0;
+  max-width: 60ch;
+  color: var(--ink);
+}
+
+/* ─── section primitives ────────────────────────────────────────────── */
+
+section {
+  padding: 70px 0 50px;
+  border-bottom: 1px solid var(--rule);
+}
+section:last-of-type { border-bottom: none; }
+
+.eyebrow {
+  font-family: 'Archivo Narrow', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  background: var(--accent);
+}
+
+h2 {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: clamp(32px, 4vw, 48px);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  margin: 0 0 24px;
+  text-wrap: balance;
+}
+h2 em { font-style: italic; color: var(--accent); font-weight: 500; }
+
+h3 {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.25;
+  margin: 32px 0 12px;
+  letter-spacing: -0.005em;
+}
+
+h4 {
+  font-family: 'Archivo Narrow', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+p { margin: 0 0 18px; max-width: 72ch; }
+
+.lede {
+  font-size: 22px;
+  line-height: 1.5;
+  margin-bottom: 28px;
+  max-width: 68ch;
+}
+
+a { color: var(--accent-2); text-decoration: none; border-bottom: 1px solid currentColor; }
+a:hover { color: var(--accent); }
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+}
+ul li {
+  padding: 12px 0 12px 24px;
+  border-bottom: 1px solid rgba(20,15,5,0.15);
+  position: relative;
+  max-width: 72ch;
+}
+ul li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  font-family: 'Fraunces', serif;
+  color: var(--green);
+  font-weight: 600;
+  font-size: 16px;
+}
+ul li:last-child { border-bottom: none; }
+
+/* ─── comparison grid ─────────────────────────────────────────────── */
+
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 32px 0;
+}
+.comp-side {
+  background: var(--paper);
+  padding: 28px 24px;
+}
+.comp-side.bad { background: var(--paper-2); }
+.comp-label {
+  font-family: 'Archivo Narrow', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  color: var(--accent);
+}
+.comp-side.bad .comp-label { color: var(--muted); }
+.comp-side h3 {
+  margin-top: 0;
+  font-size: 20px;
+  margin-bottom: 14px;
+}
+.comp-side ul {
+  margin: 0;
+}
+.comp-side ul li {
+  font-size: 15px;
+  padding: 8px 0 8px 20px;
+}
+.comp-side.bad ul li::before {
+  content: '✕';
+  color: var(--accent);
+}
+
+/* ─── cost table ───────────────────────────────────────────────── */
+
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 32px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+}
+.cost-table th, .cost-table td {
+  text-align: left;
+  padding: 14px 12px;
+  border-bottom: 1px solid rgba(20,15,5,0.15);
+  font-variant-numeric: tabular-nums;
+}
+.cost-table th {
+  font-family: 'Archivo Narrow', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+  color: var(--accent-2);
+  font-weight: 700;
+  border-bottom: 2px solid var(--rule);
+}
+.cost-table td:not(:first-child) { text-align: right; }
+.cost-table tr.highlight {
+  background: rgba(179,71,31,0.06);
+}
+.cost-table tr.highlight td {
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+/* ─── scenario cards ─────────────────────────────────────────────── */
+
+.scenarios {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 32px 0;
+}
+.scenario {
+  background: var(--paper);
+  padding: 28px 24px;
+}
+.scenario-tag {
+  display: inline-block;
+  font-family: 'Archivo Narrow', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 4px 10px;
+  margin-bottom: 14px;
+}
+.scenario h4 {
+  font-family: 'Fraunces', serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.scenario-problem {
+  font-size: 14px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0 0 12px;
+  padding-left: 14px;
+  border-left: 2px solid var(--paper-3);
+}
+.scenario-solution {
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.55;
+}
+.scenario ul {
+  margin: 12px 0 0;
+}
+.scenario ul li {
+  font-size: 13px;
+  padding: 6px 0 6px 20px;
+  border: none;
+}
+
+/* ─── getting started ─────────────────────────────────────────────── */
+
+.hardware {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 32px 0;
+}
+.hw-tier {
+  background: var(--paper-2);
+  padding: 24px 20px;
+}
+.hw-tier h4 {
+  font-family: 'Fraunces', serif;
+  text-transform: none;
+  font-size: 16px;
+  letter-spacing: 0;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.hw-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-2);
+  margin-bottom: 12px;
+}
+.hw-tier ul {
+  margin: 0;
+}
+.hw-tier ul li {
+  font-size: 13px;
+  padding: 5px 0 5px 18px;
+  border: none;
+}
+.hw-tier ul li::before {
+  font-size: 13px;
+}
+
+/* ─── features grid ─────────────────────────────────────────────── */
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px 48px;
+  margin: 28px 0;
+}
+.feature h4 {
+  font-family: 'Fraunces', serif;
+  text-transform: none;
+  font-size: 17px;
+  letter-spacing: 0;
+  color: var(--ink);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.feature h4::before {
+  content: '▸';
+  color: var(--accent);
+  font-weight: 400;
+  margin-right: 8px;
+}
+.feature p { font-size: 15px; line-height: 1.5; margin-bottom: 0; max-width: none; }
+
+/* ─── checklist ─────────────────────────────────────────────── */
+
+.checklist {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  padding: 28px 32px;
+  margin: 28px 0;
+}
+.checklist h4 {
+  margin-bottom: 16px;
+  color: var(--ink);
+}
+.checklist ul li {
+  border: none;
+  padding: 8px 0 8px 24px;
+  font-size: 15px;
+}
+
+/* ─── close ───────────────────────────────────────────────────── */
+
+.close {
+  background: var(--ink);
+  color: var(--paper);
+  margin: 0 -1000px;
+  padding: 70px 1000px;
+}
+.close .eyebrow { color: var(--paper-3); }
+.close .eyebrow::before { background: var(--paper-3); }
+.close h2 { color: var(--paper); }
+.close h2 em { color: var(--paper-3); font-weight: 500; }
+.close p { color: var(--paper-2); max-width: 72ch; }
+.close-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 36px;
+}
+.close-box {
+  border: 1px solid var(--paper-3);
+  padding: 24px 20px;
+}
+.close-box h4 {
+  font-family: 'Fraunces', serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 17px;
+  color: var(--paper);
+  margin-bottom: 8px;
+}
+.close-box p {
+  font-size: 14px;
+  margin: 0;
+  color: var(--paper-2);
+  line-height: 1.5;
+  max-width: none;
+}
+
+.colophon {
+  background: var(--ink);
+  color: var(--paper-3);
+  margin: 0 -1000px;
+  padding: 24px 1000px;
+  font-family: 'Archivo Narrow', sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  text-align: center;
+  border-top: 1px solid var(--quiet);
+}
+.colophon a { color: var(--paper-2); border-bottom-color: var(--paper-3); }
+
+/* ─── responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 880px) {
+  .layout { padding: 0 28px; }
+  .comparison, .scenarios, .hardware, .features, .close-grid { 
+    grid-template-columns: 1fr; 
+  }
+  .cost-table { font-size: 12px; }
+  .cost-table th, .cost-table td { padding: 10px 6px; }
+}
+
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ─── MASTHEAD ─────────────────────────────────────────────────── -->
+<header class="masthead">
+  <div class="masthead-row">
+    <span class="left">Safebox · Infrastructure Guide</span>
+    <span>For Decision Makers</span>
+  </div>
+
+  <h1 class="masthead-title">
+    Multi-Tenant AI Hosting for <em>Communities</em> & Businesses
+  </h1>
+
+  <p class="masthead-deck">
+    Self-hosted AI that runs ChatGPT-like models on your own infrastructure
+    instead of sending data to cloud companies. Full HIPAA/GDPR/SOC2 compliance,
+    90% cost reduction, and complete data sovereignty.
+  </p>
+</header>
+
+
+<!-- ─── WHAT IS THIS ─────────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">I · The Concept</div>
+  <h2>What Is <em>Safebox?</em></h2>
+
+  <p class="lede">
+    Safebox is a self-hosted AI platform that lets communities and businesses
+    run their own AI models (ChatGPT-like chatbots, image generators, voice
+    transcription) on their own infrastructure instead of sending data to cloud companies.
+  </p>
+
+  <div class="comparison">
+    <div class="comp-side bad">
+      <div class="comp-label">Old Way (Cloud AI)</div>
+      <h3>Data Goes to Third Parties</h3>
+      <ul>
+        <li>Every query sent to OpenAI's servers</li>
+        <li>Your data trains their models</li>
+        <li>Privacy concerns</li>
+        <li>Compliance issues (HIPAA/GDPR)</li>
+        <li>Expensive at scale</li>
+        <li>Vendor lock-in</li>
+      </ul>
+    </div>
+
+    <div class="comp-side">
+      <div class="comp-label">Safebox Way</div>
+      <h3>Data Never Leaves Your Control</h3>
+      <ul>
+        <li>AI runs on your own server</li>
+        <li>Data stays on-premise</li>
+        <li>Full privacy guaranteed</li>
+        <li>HIPAA/GDPR/SOC2 compliant</li>
+        <li>90% cheaper after year 1</li>
+        <li>No vendor lock-in</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Who Is This For?</h3>
+
+  <div class="features">
+    <div class="feature">
+      <h4>Healthcare Providers</h4>
+      <p>Patient data never leaves your server. Full HIPAA compliance without Business Associate Agreements with AI vendors.</p>
+    </div>
+
+    <div class="feature">
+      <h4>Legal Firms</h4>
+      <p>Attorney-client privileged documents stay private. No third-party disclosure of case information.</p>
+    </div>
+
+    <div class="feature">
+      <h4>Financial Services</h4>
+      <p>Customer data protected. SOC2/PCI compliant. No cardholder data sent to third parties.</p>
+    </div>
+
+    <div class="feature">
+      <h4>EU Businesses</h4>
+      <p>Data stays in EU. No cross-border transfers. Full GDPR compliance by design.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── COST COMPARISON ─────────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">II · The Economics</div>
+  <h2>Cost Comparison: Cloud AI vs <em>Safebox</em></h2>
+
+  <h3>Example: Medical Practice (500 patient interactions/day)</h3>
+
+  <table class="cost-table">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Cloud AI (OpenAI)</th>
+        <th>Safebox (Self-Hosted)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Cost per interaction</td>
+        <td>~$0.50</td>
+        <td>$0.05 (after hardware)</td>
+      </tr>
+      <tr>
+        <td>Monthly cost</td>
+        <td>$7,500</td>
+        <td>$500 (electricity + hosting)</td>
+      </tr>
+      <tr>
+        <td>Annual cost</td>
+        <td>$90,000</td>
+        <td>$21,000 (year 1) / $6,000 (year 2+)</td>
+      </tr>
+      <tr>
+        <td>Hardware cost</td>
+        <td>$0</td>
+        <td>$15,000 (one-time)</td>
+      </tr>
+      <tr class="highlight">
+        <td>5-Year Total</td>
+        <td>$450,000</td>
+        <td>$45,000</td>
+      </tr>
+      <tr class="highlight">
+        <td>5-Year Savings</td>
+        <td colspan="2">$405,000 (90% reduction)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Scaling Examples</h3>
+
+  <table class="cost-table">
+    <thead>
+      <tr>
+        <th>Organization Size</th>
+        <th>Cloud AI Annual</th>
+        <th>Safebox Annual (Year 2+)</th>
+        <th>Annual Savings</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>50 users</td>
+        <td>$36,000</td>
+        <td>$6,000</td>
+        <td>$30,000 (83%)</td>
+      </tr>
+      <tr>
+        <td>200 users</td>
+        <td>$72,000</td>
+        <td>$6,000</td>
+        <td>$66,000 (92%)</td>
+      </tr>
+      <tr>
+        <td>500 users</td>
+        <td>$180,000</td>
+        <td>$12,000</td>
+        <td>$168,000 (93%)</td>
+      </tr>
+      <tr class="highlight">
+        <td>1,000+ users</td>
+        <td>$360,000+</td>
+        <td>$18,000</td>
+        <td>$342,000+ (95%)</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ─── COMPLIANCE ─────────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">III · Privacy & Compliance</div>
+  <h2>Why Cloud AI Has <em>Compliance</em> Issues</h2>
+
+  <p class="lede">
+    When you use cloud AI (OpenAI, Google, etc.), your data goes to their servers.
+    Even if they promise not to look, you're still sending Protected Health Information,
+    attorney-client privileged documents, or customer financial data to a third party.
+  </p>
+
+  <div class="scenarios">
+    <div class="scenario">
+      <span class="scenario-tag">HIPAA</span>
+      <h4>Healthcare Compliance</h4>
+      <p class="scenario-problem">
+        Problem: Sending patient data to OpenAI violates HIPAA (Protected Health Information to third party)
+      </p>
+      <p class="scenario-solution">
+        <strong>Safebox Solution:</strong>
+      </p>
+      <ul>
+        <li>PHI never leaves your building</li>
+        <li>No Business Associate Agreement needed</li>
+        <li>Full audit trail for regulators</li>
+        <li>Encryption at rest and in transit</li>
+        <li>Access controls built-in</li>
+      </ul>
+    </div>
+
+    <div class="scenario">
+      <span class="scenario-tag">GDPR</span>
+      <h4>EU Data Protection</h4>
+      <p class="scenario-problem">
+        Problem: EU customer data sent to US servers violates GDPR (cross-border transfer)
+      </p>
+      <p class="scenario-solution">
+        <strong>Safebox Solution:</strong>
+      </p>
+      <ul>
+        <li>Data stays in EU (host in Frankfurt)</li>
+        <li>No cross-border transfers</li>
+        <li>Right to deletion (just delete local data)</li>
+        <li>Right to access (query local database)</li>
+        <li>Data minimization by design</li>
+      </ul>
+    </div>
+
+    <div class="scenario">
+      <span class="scenario-tag">SOC2</span>
+      <h4>Enterprise Security</h4>
+      <p class="scenario-problem">
+        Problem: Third-party AI vendors create supply chain risk for SOC2 audits
+      </p>
+      <p class="scenario-solution">
+        <strong>Safebox Solution:</strong>
+      </p>
+      <ul>
+        <li>You control security controls</li>
+        <li>Built-in access logging</li>
+        <li>Immutable audit trail</li>
+        <li>Data integrity via snapshots</li>
+        <li>No third-party processors</li>
+      </ul>
+    </div>
+
+    <div class="scenario">
+      <span class="scenario-tag">PCI</span>
+      <h4>Payment Card Industry</h4>
+      <p class="scenario-problem">
+        Problem: Cardholder data cannot be sent to third-party AI for processing
+      </p>
+      <p class="scenario-solution">
+        <strong>Safebox Solution:</strong>
+      </p>
+      <ul>
+        <li>No cardholder data leaves network</li>
+        <li>Network segmentation (isolated AI)</li>
+        <li>Access controls and logging</li>
+        <li>Encrypted storage</li>
+        <li>Regular security snapshots</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── HOW IT WORKS ─────────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">IV · Architecture</div>
+  <h2>How It <em>Works</em> (Simple Explanation)</h2>
+
+  <p class="lede">
+    Think of Safebox like having your own private ChatGPT server. Instead of your
+    questions going over the internet to OpenAI, they stay on your own computer
+    in your own building.
+  </p>
+
+  <h3>Key Components</h3>
+
+  <div class="features">
+    <div class="feature">
+      <h4>Multi-Tenant Isolation</h4>
+      <p>
+        Each department or community gets its own isolated environment. Like
+        separate apartments in a building — one tenant's data never touches another's.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>Local AI Models</h4>
+      <p>
+        Open-source models (LLaMA, DeepSeek, Stable Diffusion, Whisper) running
+        on your hardware, not in the cloud. Same capabilities as ChatGPT/DALL-E.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>Automatic Backups</h4>
+      <p>
+        Snapshots every hour (like Time Machine). Instant rollback if something
+        breaks. Replicate to second server for disaster recovery. All encrypted.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>Usage Tracking</h4>
+      <p>
+        Who used how much AI compute. Charge back to departments. Cache-aware
+        pricing (reusing previous responses is cheaper).
+      </p>
+    </div>
+  </div>
+
+  <h3>Security Features</h3>
+
+  <div class="checklist">
+    <h4>Data Encryption</h4>
+    <ul>
+      <li>At rest: All data encrypted on disk (AES-256)</li>
+      <li>In transit: SSL/TLS for all communications</li>
+      <li>Backups: Encrypted snapshots</li>
+      <li>Internal: Unix sockets (can't intercept)</li>
+    </ul>
+  </div>
+
+  <div class="checklist">
+    <h4>Access Control</h4>
+    <ul>
+      <li>Role-based access (admin, user, viewer)</li>
+      <li>Multi-factor authentication (MFA)</li>
+      <li>Audit logging (who did what, when)</li>
+      <li>First visitor becomes admin (secure onboarding)</li>
+    </ul>
+  </div>
+
+  <div class="checklist">
+    <h4>Network Security</h4>
+    <ul>
+      <li>Firewall rules (only necessary ports open)</li>
+      <li>VPN access for remote administration</li>
+      <li>AI models behind firewall (no direct internet)</li>
+      <li>You control physical server location</li>
+    </ul>
+  </div>
+</section>
+
+
+<!-- ─── REAL-WORLD SCENARIOS ─────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">V · Real-World Use Cases</div>
+  <h2>How Organizations <em>Actually Use</em> Safebox</h2>
+
+  <div class="scenarios">
+    <div class="scenario">
+      <span class="scenario-tag">Medical Practice</span>
+      <h4>HIPAA-Compliant Patient Notes</h4>
+      <p class="scenario-problem">
+        Problem: Dr. Smith wants AI to help write patient notes, but can't send
+        patient data to OpenAI (HIPAA violation).
+      </p>
+      <p class="scenario-solution">
+        <strong>Solution:</strong> Install Safebox in practice's server room. Doctor
+        dictates notes → AI transcribes and formats → all patient data stays on-premise.
+        Full HIPAA compliance, $500/month vs $5,000/month cloud.
+      </p>
+    </div>
+
+    <div class="scenario">
+      <span class="scenario-tag">EU E-Commerce</span>
+      <h4>GDPR-Compliant Customer Support</h4>
+      <p class="scenario-problem">
+        Problem: Company needs AI chatbot, but GDPR forbids sending EU customer
+        data to US servers.
+      </p>
+      <p class="scenario-solution">
+        <strong>Solution:</strong> Host Safebox in EU data center (Frankfurt). AI
+        chatbot runs on EU server, customer conversations never leave EU. Full GDPR
+        compliance, $300/month vs $3,000/month OpenAI.
+      </p>
+    </div>
+
+    <div class="scenario">
+      <span class="scenario-tag">Law Firm</span>
+      <h4>Privileged Legal Research</h4>
+      <p class="scenario-problem">
+        Problem: Firm wants AI for legal research, but attorney-client privilege
+        prohibits sharing case details with third parties.
+      </p>
+      <p class="scenario-solution">
+        <strong>Solution:</strong> Install Safebox in firm's office (air-gapped if needed).
+        Lawyers ask AI about cases, all privileged information stays private. $20K
+        hardware + $200/month vs $8,000/month cloud.
+      </p>
+    </div>
+
+    <div class="scenario">
+      <span class="scenario-tag">Financial Services</span>
+      <h4>PCI-Compliant Fraud Detection</h4>
+      <p class="scenario-problem">
+        Problem: Bank needs AI for fraud detection, can't send customer financial
+        data to cloud AI (PCI/SOC2 violations).
+      </p>
+      <p class="scenario-solution">
+        <strong>Solution:</strong> Install Safebox in bank's SOC2-compliant data center.
+        AI trained on historical fraud patterns, real-time detection on bank's servers.
+        $50K hardware + $1K/month vs $20K/month cloud.
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── GETTING STARTED ─────────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">VI · Getting Started</div>
+  <h2>Choose Your <em>Hardware</em> Setup</h2>
+
+  <div class="hardware">
+    <div class="hw-tier">
+      <h4>Starter</h4>
+      <div class="hw-price">~$15,000</div>
+      <ul>
+        <li>1× NVIDIA A100 GPU (80GB)</li>
+        <li>Good for: 50-100 users</li>
+        <li>Chat + basic image generation</li>
+        <li>Monthly: ~$300 (power + internet)</li>
+      </ul>
+    </div>
+
+    <div class="hw-tier">
+      <h4>Production</h4>
+      <div class="hw-price">~$50,000</div>
+      <ul>
+        <li>2× NVIDIA A100 GPUs (80GB each)</li>
+        <li>Good for: 500+ users</li>
+        <li>Full features, high availability</li>
+        <li>Monthly: ~$800</li>
+      </ul>
+    </div>
+
+    <div class="hw-tier">
+      <h4>Enterprise</h4>
+      <div class="hw-price">~$200,000</div>
+      <ul>
+        <li>8× NVIDIA H100 GPUs (80GB each)</li>
+        <li>Good for: 10,000+ users</li>
+        <li>Frontier models, massive scale</li>
+        <li>Monthly: ~$2,000</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Installation Timeline: 1-2 Days</h3>
+
+  <div class="checklist">
+    <h4>Step-by-Step Process</h4>
+    <ul>
+      <li><strong>Hardware Setup (4 hours):</strong> Install server, connect power/network, install Ubuntu</li>
+      <li><strong>Safebox Installation (2 hours):</strong> Run automated installer, configure SSL, set up admin</li>
+      <li><strong>AI Models (4 hours):</strong> Download open-source models, configure settings, test</li>
+      <li><strong>Community Setup (2 hours):</strong> Create tenants, set up users, configure backups</li>
+    </ul>
+  </div>
+</section>
+
+
+<!-- ─── FAQ ─────────────────────────────────────────────── -->
+<section>
+  <div class="eyebrow">VII · Common Questions</div>
+  <h2>Frequently Asked <em>Questions</em></h2>
+
+  <div class="features">
+    <div class="feature">
+      <h4>Is it hard to maintain?</h4>
+      <p>
+        No harder than maintaining an email server. Automated backups, self-healing
+        snapshots, monitoring dashboard. Optional managed service available.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>What if hardware fails?</h4>
+      <p>
+        Automatic backups to second server. Restore from backup in 10-30 minutes.
+        Optional hot standby for instant failover.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>Can I start small and grow?</h4>
+      <p>
+        Yes! Start with 1 GPU ($15K), add more as you grow. Each GPU = more capacity.
+        No downtime to upgrade.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>What about software updates?</h4>
+      <p>
+        Snapshot before update, test, rollback if issues (instant). Zero downtime
+        updates possible. Safe and easy.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>Is it really HIPAA/GDPR compliant?</h4>
+      <p>
+        Yes, when configured correctly. Data never leaves your infrastructure, full
+        audit logging, encryption, access controls. (Note: Still need BAA with hosting
+        provider if using external data center.)
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>What AI models can I use?</h4>
+      <p>
+        All major open-source models: LLaMA 3.3, DeepSeek-R1, Mistral (chat),
+        Stable Diffusion XL (images), <strong>VibeVoice-ASR</strong> (60-min transcription 
+        with speaker diarization, 50+ languages), Whisper Large v3 (voice), Qwen Coder (code). 
+        Can fine-tune on your data.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>How does multi-tenant work?</h4>
+      <p>
+        Each community/department gets: own isolated environment (like separate
+        apartments), own database, own AI usage tracking, own admin controls.
+        Can't see each other's data.
+      </p>
+    </div>
+
+    <div class="feature">
+      <h4>What's the catch?</h4>
+      <p>
+        Higher upfront cost ($15K+ hardware). Requires basic IT staff (or managed
+        service). Not 99.999% uptime (unless you invest in redundancy). Cloud is
+        cheaper for tiny startups (&lt;10 users).
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── CLOSE ───────────────────────────────────────────────────── -->
+<section class="close">
+  <div class="eyebrow">VIII · The Bottom Line</div>
+  <h2>Safebox gives you ChatGPT-level AI <em>without</em> sending data to OpenAI.</h2>
+
+  <div class="close-grid">
+    <div class="close-box">
+      <h4>For Regulated Industries</h4>
+      <p>
+        Healthcare, Finance, Legal: Full HIPAA/GDPR/SOC2/PCI compliance.
+        Data never leaves your control. Complete audit trail for regulators.
+        No third-party data breach exposure.
+      </p>
+    </div>
+
+    <div class="close-box">
+      <h4>For Cost-Conscious Orgs</h4>
+      <p>
+        90% cheaper after first year vs cloud. Predictable costs (no surprise
+        bills). No vendor lock-in. Scale efficiently (add GPUs as needed).
+      </p>
+    </div>
+
+    <div class="close-box">
+      <h4>For Privacy-Focused Communities</h4>
+      <p>
+        Member trust (conversations stay private). No surveillance (no third-party
+        tracking). Data ownership (you own everything). Transparency (open-source code).
+      </p>
+    </div>
+  </div>
+
+  <p style="margin-top: 40px; max-width: 70ch;">
+    <strong>Perfect for:</strong> Healthcare, Finance, Legal, EU businesses,
+    Privacy-focused communities, Cost-conscious organizations.
+  </p>
+
+  <p style="max-width: 70ch;">
+    <strong>Not perfect for:</strong> Tiny startups (cloud cheaper at small scale),
+    Organizations without IT staff (unless using managed service), Businesses
+    requiring 99.999% uptime (unless investing in redundancy).
+  </p>
+</section>
+
+</div>
+
+<footer class="colophon">
+  Safebox Infrastructure · Multi-Tenant AI Hosting · Open-source models, private infrastructure, your data
+</footer>
+
+</body>
+</html>
