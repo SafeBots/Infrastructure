@@ -1,410 +1,362 @@
-# Safebox AMI 3 Security Hardening
+# Safebox AMI Security Hardening
 
-## CRITICAL: Remote Access Vulnerability Mitigation
-
-### **CVE-2026-32746 - Telnetd Critical RCE**
-
-**Vulnerability:**
-- Unpatched critical telnetd bug (CVE-2026-32746)
-- Allows attackers to gain full system access with NO credentials
-- One connection to port 23 triggers memory corruption
-- Execute arbitrary code as root
-- Already being exploited in the wild
-
-**Mitigation in AMI 3:**
-✅ **telnet and telnet-server COMPLETELY REMOVED**
-✅ **telnet.socket disabled and masked**
-✅ **Verification check ensures telnet cannot be present**
+> **Pre-release 1.0.0**: This document describes the security posture of the base AMI as built by `scripts/components/base/install-base.sh`. The previous version of this document described a hardening model that permitted SSH and AWS SSM Session Manager for "emergency access." That was wrong. This version describes the correct model — zero interactive access, ever.
 
 ---
 
-## Complete Remote Access Removal
+## The Zero-Shell-Access Policy
 
-### **All Remote Access Methods Removed in AMI 3**
+The Safebox attestation model rests on a simple guarantee: **the running code is exactly the code that was attested at boot**. TPM 2.0 measures the boot chain, the kernel, the initrd, and the root filesystem hash; the ZFS encryption keys are sealed to those PCR values and only released when they match. A modified boot artifact produces different PCRs, the keys are not released, and the instance cannot mount its data.
+
+That guarantee is broken the moment any human gets an interactive shell on the running instance, regardless of how that shell arrives.
+
+| Access path | What attestation guarantees | What it does not guarantee |
+|-------------|----------------------------|----------------------------|
+| TPM measured boot | The kernel + initrd + rootfs hash matches | Any process can do whatever the kernel allows once running |
+
+Once you have a shell, you can:
+
+- `dd if=/dev/sda > exfil.img` — read the unencrypted boot partition
+- `cat /run/safebox/zfs-key` — steal the in-memory ZFS key
+- `nsenter` into a container, escape the namespace
+- `kexec` a new kernel without rebooting (no new attestation cycle)
+- Patch a running binary in memory — the on-disk image is unchanged, so the next attestation cycle still passes
+
+This isn't theoretical. It's the difference between "the boot was clean" (which attestation can prove) and "everything happening on this machine since boot is clean" (which attestation can't prove for a system that allows shells).
+
+So the policy is: **no human is ever inside an attested Safebox instance**. If something goes wrong, you don't fix it in place. You terminate the instance, snapshot the encrypted ZFS volume for offline forensic analysis, and replace the instance from an attested image.
+
+---
+
+## What the Installer Removes
+
+`install-base.sh` removes every interactive-shell mechanism it can find, in four tiers, and verifies the removal succeeded.
+
+### Tier 1 — Legacy remote-access daemons
+
+```
+telnet, telnet-server      (CVE-2026-32746)
+rsh, rsh-server, rlogin
+vsftpd, proftpd
+tftp, tftp-server
+cockpit, cockpit-ws, cockpit-bridge
+webmin
+```
+
+These were never appropriate for an attested system. They're removed both because their security history is poor (telnetd's CVE-2026-32746 is the headline case, but the others have similar issues) and because they're shell-access mechanisms by design.
+
+### Tier 2 — SSH
+
+```
+openssh-server, openssh-clients, openssh
+```
+
+Yes, even SSH. This is the one most ops teams push back on, because SSH is the universal expectation. The right response is: **you should not be operating an attested system if you need to log in to it.** If a service breaks, the instance is terminated and replaced. Diagnostics happen against an offline ZFS snapshot in a separate environment, not on the live instance.
+
+If the absence of SSH is operationally infeasible for your team, the Safebox attestation guarantee is not the security model you actually want. There are perfectly reasonable architectures that allow SSH and use other defenses (network segmentation, jump hosts, just-in-time access, MFA). Those architectures don't promise what attestation promises — and Safebox is built around the promise that attestation can actually keep.
+
+### Tier 3 — AWS SSM Session Manager
+
+```
+amazon-ssm-agent
+```
+
+This is the trap. The SSM agent IS a remote-shell mechanism. From the kernel's perspective, there's no meaningful difference between SSH (`sshd` accepts a TCP connection and spawns `/bin/bash` for an authenticated user) and SSM Session Manager (`amazon-ssm-agent` polls AWS, receives a session start, and spawns `/bin/bash` for an authenticated user). Both are interactive shells reachable by anyone with the right credentials.
+
+People sometimes argue "SSM is safer than SSH because it goes through AWS IAM instead of an SSH key." That's the wrong frame. The threat model isn't "the SSH key leaked"; the threat model is "anyone, including the cloud provider, can get a shell on this box." SSM means AWS IAM credentials are sufficient. SSH means the SSH key is sufficient. Both are interactive-access channels that defeat the attestation model. Removing SSH while keeping SSM is moving the threat surface from one credential type to another — not eliminating it.
+
+**Important distinction**: removing `amazon-ssm-agent` does NOT remove AWS API access from inside the instance. If your application needs to call S3, KMS, or any AWS API, attach an IAM role to the instance. The IAM role mechanism uses the instance metadata service (`169.254.169.254`); it is a credential-issuance mechanism, not a remote-shell mechanism. We block that endpoint from capability code via SSRF (see Safebox plugin Protocol.HTTP) but the legitimate IAM-role mechanism for application code keeps working.
+
+What you lose with SSM agent removed:
+- `aws ssm start-session` — no, you cannot use this
+- `aws ssm send-command` — no, you cannot use this
+
+What you keep:
+- IAM-role-based AWS API calls from inside the instance — works normally
+- Outbound HTTPS to AWS services — works normally
+- CloudWatch metrics and logs via the regular API path — works normally
+
+### Tier 4 — TTY/console getty
+
+```
+systemctl mask getty@.service
+systemctl mask serial-getty@ttyS0.service
+systemctl mask debug-shell.service
+```
+
+This prevents login prompts on TTYs and the serial console. Even if someone enables EC2 Serial Console access at the AWS account level, there's no login prompt to interact with — they'd see kernel output but couldn't authenticate.
+
+Operators who want belt-and-suspenders should also disable EC2 Serial Console at the AWS account level. The setting is account-wide and is OFF by default; if you've never enabled it, you're already covered.
+
+### Socket-unit masking
+
+After uninstalling the packages, the installer also masks the socket and service units for each removed daemon. This prevents a future package update (or a misbehaving dependency pull) from reactivating any of them silently.
+
+```
+telnet.socket   rsh.socket   vsftpd.service   cockpit.socket
+sshd.service    sshd.socket  ssh.service      ssh.socket
+amazon-ssm-agent.service
+```
+
+### Verification gates
+
+The installer doesn't trust that the removal worked. It verifies each tier:
 
 ```bash
-# Phase 1 of finalize-ami3.sh removes:
-
-1. SSH (openssh-server, openssh-clients, openssh)
-2. Telnet (telnet, telnet-server) ← CRITICAL
-3. RSH/Rlogin (rsh, rsh-server, rlogin)
-4. VNC (tigervnc-server, vnc-server)
-5. X11 forwarding (xorg-x11-xauth)
-6. FTP (vsftpd, proftpd)
-7. TFTP (tftp, tftp-server)
-8. Cockpit web console
-9. Webmin
-10. All .socket units that listen on network
-
-Result: ZERO network-accessible services on AMI 3
-```
-
-### **What IS Accessible?**
-
-**Only via AWS-controlled channels:**
-
-1. **EC2 Serial Console** (AWS emergency access)
-   - Requires IAM permissions
-   - AWS CloudTrail logged
-   - No network exposure
-
-2. **EC2 Instance Connect Endpoint** (temporary access)
-   - One-time SSH key injection
-   - IAM-controlled
-   - Time-limited (60 seconds)
-   - AWS CloudTrail logged
-
-3. **After Attestation** (production access)
-   - Keys provisioned only after TPM attestation passes
-   - Keys TPM-sealed to specific PCR values
-   - Can only unseal on verified instances
-
----
-
-## Attack Surface Analysis
-
-### **AMI 2 (Build/Audit Phase)**
-
-```
-Network Services:
-├── SSH: Port 22 (ENABLED - for auditing)
-├── Telnet: ABSENT (never installed)
-├── Package Manager: dnf (ENABLED - for updates during audit)
-
-Purpose: Allow human auditors to verify build
-Risk: Medium (temporary, controlled environment)
-Mitigation: Only accessible during build, not in production
-```
-
-### **AMI 3 (Production/Immutable)**
-
-```
-Network Services:
-├── SSH: REMOVED
-├── Telnet: REMOVED  
-├── RSH/Rlogin: REMOVED
-├── VNC: REMOVED
-├── FTP/TFTP: REMOVED
-├── Web Management: REMOVED
-├── ALL network sockets: DISABLED
-
-Result: ZERO attack surface for remote exploits
-```
-
-### **Running Instance (Post-Attestation)**
-
-```
-Network Services:
-├── Nginx: Port 80/443 (web traffic only)
-│   └── No admin interface
-│   └── No file upload (unless app-specific)
-│   └── Reverse proxy to containers only
-├── Application Services: Via nginx proxy
-│   └── PHP-FPM: Unix socket (not network)
-│   └── MariaDB: Unix socket (not network)
-│   └── Node.js: Container-local only
-
-Management Access:
-├── SSH: NOT AVAILABLE (removed in AMI 3)
-├── Telnet: NOT AVAILABLE (removed in AMI 3)
-├── Serial Console: Via AWS (IAM-controlled, logged)
-└── Instance Connect: Via AWS (one-time, IAM-controlled)
-
-Result: Minimal attack surface, all access audited
-```
-
----
-
-## Removed Services Checklist
-
-### **Remote Access (CRITICAL - All Removed)**
-
-- [x] **openssh-server** (SSH daemon)
-- [x] **openssh-clients** (SSH client)
-- [x] **openssh** (SSH metapackage)
-- [x] **telnet** (Telnet client) ← CVE-2026-32746
-- [x] **telnet-server** (Telnetd daemon) ← CVE-2026-32746
-- [x] **rsh** (Remote shell)
-- [x] **rsh-server** (RSH daemon)
-- [x] **rlogin** (Remote login)
-- [x] **tigervnc-server** (VNC server)
-- [x] **vnc-server** (VNC metapackage)
-- [x] **xorg-x11-xauth** (X11 forwarding)
-
-### **File Transfer (All Removed)**
-
-- [x] **vsftpd** (FTP server)
-- [x] **proftpd** (ProFTPD server)
-- [x] **tftp** (TFTP client)
-- [x] **tftp-server** (TFTP server)
-
-### **Web Management (All Removed)**
-
-- [x] **cockpit** (Web-based management)
-- [x] **cockpit-ws** (Cockpit web service)
-- [x] **webmin** (Web admin interface)
-
-### **Package Management (Removed for Immutability)**
-
-- [x] **dnf** (Package manager)
-- [x] **yum** (Legacy package manager)
-- [x] **dnf-plugins-core** (DNF plugins)
-
-### **Configuration Removed**
-
-- [x] `/etc/ssh/` (SSH configuration directory)
-- [x] `/root/.ssh/` (Root SSH keys)
-- [x] `/home/*/.ssh/` (User SSH keys)
-- [x] All `.socket` units listening on network ports
-
----
-
-## Verification Checks
-
-### **Automated Verification in finalize-ami3.sh**
-
-```bash
-# 1. Check SSH removed
-if command -v sshd &> /dev/null; then
-    ERROR: SSH still present
+# Telnetd
+if command -v telnetd &>/dev/null || rpm -q telnet-server &>/dev/null 2>&1; then
+    echo "ERROR: telnetd still present"
+    exit 1
 fi
 
-# 2. Check telnet removed (CRITICAL)
-if command -v telnetd &> /dev/null || rpm -q telnet-server &> /dev/null; then
-    ERROR: Telnet still present (CVE-2026-32746 vulnerability!)
+# SSH
+if command -v sshd &>/dev/null || rpm -q openssh-server &>/dev/null 2>&1; then
+    echo "ERROR: sshd still present"
+    exit 1
 fi
 
-# 3. Check rsh/rlogin removed
-if command -v rshd &> /dev/null || command -v rlogind &> /dev/null; then
-    ERROR: rsh/rlogin still present
+# SSM
+if rpm -q amazon-ssm-agent &>/dev/null 2>&1; then
+    echo "ERROR: amazon-ssm-agent still present"
+    exit 1
 fi
 
-# 4. Check no remote access packages installed
-for pkg in openssh-server telnet telnet-server rsh rsh-server \
-           tigervnc-server vsftpd cockpit; do
-    if rpm -q "$pkg" &> /dev/null; then
-        ERROR: Remote access package still installed: $pkg
+# No process listening on common remote-shell ports
+for port in 22 23 513 514 5985 5986; do
+    if ss -tnl | awk '{print $4}' | grep -q ":${port}$"; then
+        echo "ERROR: service listening on port $port"
+        exit 1
     fi
 done
-
-# 5. Check no network sockets listening (except localhost)
-ss -tlnp | grep -v '127.0.0.1\|::1' | grep LISTEN
-# Should return empty (no results)
-
-# If ANY errors: ABORT - AMI 3 creation fails
 ```
 
-### **Manual Verification (Post-Deployment)**
-
-```bash
-# 1. Verify no remote access services
-systemctl list-units --type=service --state=running | \
-    grep -E 'ssh|telnet|rsh|vnc|ftp|tftp|cockpit'
-# Should return: empty
-
-# 2. Verify no listening network ports (except nginx)
-ss -tlnp | grep LISTEN
-# Should show only:
-#   127.0.0.1:3306 (MariaDB unix socket, not network)
-#   *:80 (nginx)
-#   *:443 (nginx)
-
-# 3. Verify SSH not installed
-which sshd
-# Should return: not found
-
-# 4. Verify telnet not installed (CRITICAL)
-which telnetd
-rpm -q telnet-server
-# Should return: not found / not installed
-
-# 5. Verify no package manager
-which dnf yum
-# Should return: not found
-```
+If anything fails, the install aborts. We don't ship AMIs that retain shell-access mechanisms.
 
 ---
 
-## Network Exposure Matrix
+## What That Means Operationally
 
-| Service | AMI 2 | AMI 3 | Production | Risk |
-|---------|-------|-------|------------|------|
-| **SSH** | ✓ Enabled | ✗ Removed | ✗ Not available | None |
-| **Telnet** | ✗ Never installed | ✗ Removed | ✗ Not available | **None (CVE mitigated)** |
-| **RSH/Rlogin** | ✗ Never installed | ✗ Removed | ✗ Not available | None |
-| **VNC** | ✗ Never installed | ✗ Removed | ✗ Not available | None |
-| **FTP/TFTP** | ✗ Never installed | ✗ Removed | ✗ Not available | None |
-| **Nginx** | ✗ Disabled | ✗ Disabled | ✓ Port 80/443 | Low (web only) |
-| **MariaDB** | ✗ Disabled | ✗ Disabled | ✓ Unix socket | None (local only) |
-| **PHP-FPM** | ✗ Disabled | ✗ Disabled | ✓ Unix socket | None (local only) |
-| **Serial Console** | ✓ AWS only | ✓ AWS only | ✓ AWS only | Low (IAM + CloudTrail) |
+### "How do I debug a broken instance?"
 
----
+You don't. You terminate it.
 
-## Emergency Access Methods
+1. Take a ZFS snapshot of the encrypted dataset (this happens automatically on every shutdown, or you can trigger it via the AWS API).
+2. Terminate the instance.
+3. Mount the snapshot in a separate forensic environment (a dedicated debug AMI with the same ZFS key, running in an isolated VPC).
+4. Analyze the snapshot offline. The original instance is gone; the encryption key for the snapshot is only available to the forensic environment for a limited time window.
 
-### **If AMI 3 Instance Needs Debugging**
+This is more expensive than "SSH in and grep some logs." It's also fundamentally different from the operational model most teams are used to. The trade-off is that the attestation guarantee actually holds, because nothing about the production instance is mutable except via a new boot from a new attested image.
 
-**DO NOT** try to SSH or telnet - they're removed!
+### "What if I need to push a config change?"
 
-**Method 1: EC2 Serial Console** (Recommended)
-```bash
-# Enable serial console (one-time, per account/region)
-aws ec2 enable-serial-console-access --region us-east-1
+You don't push changes to a running instance. You rebuild an AMI with the new config (which produces a new cascade SHA256, which TPM measures), deploy that AMI, and roll the fleet. Old instances terminate; new instances boot with the new attested config.
 
-# Connect via AWS Console
-# EC2 → Instances → Actions → Monitor and troubleshoot → 
-#   EC2 Serial Console → Connect
+This is sometimes called "immutable infrastructure" — but with attestation, it's not optional. Mutable infrastructure breaks the attestation guarantee by definition.
 
-# Or via AWS CLI
-aws ec2-instance-connect send-serial-console-ssh-public-key \
-    --instance-id i-xxxxx \
-    --serial-port 0 \
-    --ssh-public-key file://~/.ssh/id_rsa.pub
+### "What about CloudWatch and observability?"
 
-ssh -i ~/.ssh/id_rsa <instance-id>.port0@serial-console.ec2-instance-connect.us-east-1.aws
-```
+Observability doesn't require shells. The Safebox instance pushes logs and metrics outbound through normal APIs (CloudWatch Logs, CloudWatch Metrics, custom log shipping). All of that uses the IAM-role mechanism on the metadata endpoint, not SSM agent. You get full observability of the instance from the outside without any inbound access path.
 
-**Method 2: EC2 Instance Connect Endpoint**
-```bash
-# Create Instance Connect Endpoint (one-time per VPC)
-aws ec2 create-instance-connect-endpoint \
-    --subnet-id subnet-xxxxx \
-    --security-group-ids sg-xxxxx
+### "What about installing security patches?"
 
-# Connect with temporary SSH key (60 second window)
-aws ec2-instance-connect send-ssh-public-key \
-    --instance-id i-xxxxx \
-    --instance-os-user ec2-user \
-    --ssh-public-key file://~/.ssh/temp_key.pub
-
-ssh -i ~/.ssh/temp_key ec2-user@<instance-private-ip>
-```
-
-**Method 3: User Data Script** (Reboot required)
-```bash
-# Modify instance user data to run debug commands on next boot
-aws ec2 modify-instance-attribute \
-    --instance-id i-xxxxx \
-    --user-data file://debug-script.sh
-
-# Reboot instance
-aws ec2 reboot-instances --instance-ids i-xxxxx
-
-# Check output in /var/log/cloud-init-output.log via serial console
-```
-
-**Method 4: Create New Volume from Snapshot** (Offline analysis)
-```bash
-# Take snapshot of instance volume
-aws ec2 create-snapshot --volume-id vol-xxxxx
-
-# Create new volume from snapshot
-aws ec2 create-volume --snapshot-id snap-xxxxx --availability-zone us-east-1a
-
-# Attach to debug instance (with SSH enabled)
-aws ec2 attach-volume --volume-id vol-yyyyy --instance-id i-debug --device /dev/xvdf
-
-# Mount and analyze
-mount /dev/xvdf /mnt
-# Investigate files, logs, etc.
-```
+You don't install patches on a running instance. You rebuild the AMI with the patched base, redeploy, and roll. This is the same pattern as config changes — and again, it's not optional under attestation.
 
 ---
 
-## Security Properties of AMI 3
+## ZFS Encryption Setup
 
-### **What AMI 3 Guarantees**
+The base installer creates four encrypted ZFS datasets:
 
-✅ **No Remote Code Execution vectors**
-- No SSH (cannot exploit SSH vulns)
-- No telnet (CVE-2026-32746 mitigated)
-- No RSH/rlogin (no legacy protocol vulns)
-- No VNC (no display server exploits)
-- No FTP/TFTP (no file transfer exploits)
+| Dataset | Quota | Used For |
+|---------|-------|----------|
+| `safebox-pool/safebox` | 20 GB | Binaries, models, runtime configs |
+| `safebox-pool/docker` | 100 GB | Container images and layer cache |
+| `safebox-pool/mariadb` | — | MariaDB datadir (per-tenant sub-datasets get their own quotas) |
+| `safebox-pool/tenants` | — | Tenant file uploads (per-tenant sub-datasets) |
 
-✅ **Immutable System**
-- No package manager (cannot install malware)
-- Read-only binaries (cannot modify system)
-- TPM-measured (tampering detected)
+Each dataset uses:
+- `encryption=aes-256-gcm` (FIPS-friendly, AES-NI accelerated)
+- `keyformat=raw`
+- `keylocation=file:///run/safebox/zfs-key`
 
-✅ **Minimal Attack Surface**
-- Only nginx exposed to network (web traffic)
-- All internal services on unix sockets (not network)
-- No management interfaces (no admin panel exploits)
+The key file at `/run/safebox/zfs-key` is generated by `scripts/generate-attested-key.sh` (sealed to TPM PCRs) BEFORE `install-base.sh` runs. The key is only available after a measured boot where the PCR values match the attested image. A compromised kernel image won't see the key released, so ZFS won't mount.
 
-✅ **Auditable Access**
-- All emergency access via AWS (IAM-controlled)
-- Every access logged to CloudTrail
-- No backdoors, no hidden access
-
-✅ **Defense in Depth**
-```
-Layer 1: Nitro Enclave (RAM encryption, isolation)
-Layer 2: EBS Encryption (disk encryption)
-Layer 3: ZFS Encryption (dataset encryption)
-Layer 4: No Remote Access (removed SSH/telnet/etc.)
-Layer 5: Immutable (no package manager)
-Layer 6: TPM Attestation (tamper detection)
-Layer 7: AWS IAM (access control on emergency console)
-```
+This is where the zero-shell policy pays off: the ZFS key sits in `/run/safebox/zfs-key`, in memory, on tmpfs. If an attacker could open a shell, they could `cat` that file. Without shell access, the key is reachable only by processes the attested boot chain authorized to read it (the ZFS subsystem itself, plus a small allowlist of systemd units).
 
 ---
 
-## Compliance & Standards
+## Package Reproducibility
 
-### **CIS Benchmark Alignment**
+### System packages (dnf)
 
-✅ **1.5.1** - Ensure bootloader password is set (Nitro handles)
-✅ **1.6.1** - Ensure SELinux is enabled (enforcing)
-✅ **2.2.2** - Ensure X Window System is not installed (removed)
-✅ **2.2.3** - Ensure rsync service is not enabled (not installed)
-✅ **2.2.4** - Ensure telnet server is not enabled (removed, verified)
-✅ **2.2.5** - Ensure TFTP server is not enabled (removed)
-✅ **2.2.6** - Ensure FTP server is not enabled (removed)
-✅ **2.2.7** - Ensure HTTP server is configured (nginx, limited to web)
-✅ **2.2.15** - Ensure SSH Server is configured (N/A - SSH removed)
-✅ **5.2.1** - Ensure permissions on /etc/ssh are configured (N/A - removed)
+All system packages are version-pinned in `install-base.sh`:
 
-### **NIST SP 800-53 Controls**
+```bash
+SYSTEM_PACKAGES=(
+    "mariadb105-server-10.5.24"
+    "php-fpm-8.3.6"
+    "nginx-1.26.2"
+    "docker-ce-25.0.5"
+    "nodejs-20.18.0"
+    "npm-10.8.2"
+    "zfs-2.2.6"
+    "iptables-1.8.10"
+    "auditd-3.1.5"
+    "fail2ban-1.0.2"
+)
+```
 
-✅ **AC-2** - Account Management (no local accounts for remote access)
-✅ **AC-3** - Access Enforcement (AWS IAM for emergency access)
-✅ **AC-6** - Least Privilege (services run as dedicated users)
-✅ **AU-2** - Audit Events (CloudTrail logs all emergency access)
-✅ **CM-3** - Configuration Change Control (immutable, TPM-measured)
-✅ **CM-7** - Least Functionality (removed all unnecessary services)
-✅ **IA-2** - Identification and Authentication (AWS IAM only)
-✅ **SC-7** - Boundary Protection (no remote access, minimal ports)
-✅ **SI-4** - Information System Monitoring (CloudWatch, CloudTrail)
+After install, the script verifies each package is at the pinned version. If anything mismatched (e.g., the mirror served a different patch level), the build fails.
+
+### npm packages
+
+The base npm packages (50+ for document generation, image processing, etc.) are installed via `npm ci --ignore-scripts` from a checked-in `package.json` + `package-lock.json`.
+
+`npm ci` verifies the SHA-512 integrity hash of every package tarball before unpacking. If any tarball doesn't match its locked hash, npm refuses to install. This prevents:
+
+- **Tarball replacement attacks** — Even if an attacker compromises the npm registry, replacing a tarball causes its hash to mismatch the lockfile.
+- **Version drift** — `npm install` would happily fetch newer versions on a "minor" version bump if the lockfile is missing. `npm ci` only ever installs the exact versions in the lockfile.
+
+`--ignore-scripts` blocks lifecycle scripts (`preinstall`, `install`, `postinstall`). This is the specific vector the May 2025 TanStack/"Mini Shai-Hulud" campaign exploited — compromised packages used postinstall hooks to modify `.claude/settings.json` and `.vscode/tasks.json`. Server-side packages don't need lifecycle scripts; if a specific dependency genuinely requires one, it can be re-enabled per-package in a controlled way.
+
+### Cascade attestation
+
+Every package install (system + npm) feeds into the cascade SHA256 manifest at `/srv/safebox/manifests/`. The build pipeline computes a final SHA256 over all component manifests; that hash is what TPM attests against at boot. A modified package — even a single byte different — produces a different manifest hash, different cascade, different attestation, and the AMI fails to release its ZFS keys.
+
+See [CASCADING-MANIFESTS.md](CASCADING-MANIFESTS.md) for the full chain.
 
 ---
 
-## Summary
+## Docker Daemon Hardening
 
-### **Critical Changes for CVE-2026-32746**
+`install-base.sh` writes `/etc/docker/daemon.json` with the following security defaults:
 
-✅ **telnet and telnet-server completely removed**
-✅ **telnet.socket disabled and masked**
-✅ **Verification checks ensure telnet cannot be present**
-✅ **No network listening sockets except nginx (80/443)**
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `userns-remap` | `default` | Containers run as host UID 100000+ instead of host root |
+| `no-new-privileges` | `true` | Containers can't gain privileges via setuid |
+| `icc` | `false` | Containers can't talk to each other on the default bridge |
+| `live-restore` | `true` | Docker daemon can restart without killing containers |
+| `storage-driver` | `zfs` | Uses native ZFS instead of overlay2 (snapshots, encryption) |
+| `log-driver` | `json-file` | With 100 MB × 5 file rotation cap |
 
-### **Complete Remote Access Removal**
+`userns-remap` is the big one: without it, a process running as root inside a container is also root on the host kernel from a UID perspective. With it, container UID 0 is host UID 100000 — privilege escalation out of the container lands you in an unprivileged user space. Crucially, that unprivileged user space still can't reach the ZFS key (which is owned by root with mode 0400) or any other root-owned resource.
 
-**Removed in finalize-ami3.sh:**
-- SSH (openssh-server, openssh-clients, openssh)
-- Telnet (telnet, telnet-server) ← CVE-2026-32746
-- RSH/Rlogin (rsh, rsh-server, rlogin)
-- VNC (tigervnc-server, vnc-server)
-- FTP/TFTP (vsftpd, proftpd, tftp, tftp-server)
-- Web management (cockpit, webmin)
-- All network .socket units
+A `dockremap` user/group is also created (required by `userns-remap=default`).
 
-**Result:**
-- ✅ ZERO remote access vectors
-- ✅ ZERO RCE attack surface
-- ✅ Immutable system (no package manager)
-- ✅ TPM-measured (tamper-evident)
-- ✅ Emergency access only via AWS (IAM + CloudTrail)
+---
 
-**AMI 3 is hardened against ALL remote exploits, including the critical telnetd CVE-2026-32746!** 🔒
+## PHP-FPM Hardening
+
+The base installer modifies `/etc/php.ini`:
+
+| Setting | Default | Hardened | Rationale |
+|---------|---------|----------|-----------|
+| `expose_php` | `On` | `Off` | Hide PHP version in HTTP headers |
+| `allow_url_fopen` | `On` | `Off` | Disable `file_get_contents('http://...')` — Safebox uses Protocol.HTTP, not raw fopen |
+| `allow_url_include` | `Off` | `Off` (enforced) | Never allow `include 'http://...'` |
+| `disable_functions` | (none) | `exec, passthru, shell_exec, system, proc_open, popen, curl_multi_exec, parse_ini_file, show_source, dl, phpinfo` | Disable shell exec from PHP — Safebox tools that need subprocess execution run in their own systemd units with their own configs |
+
+Per-pool config (worker count, listen socket, user) is handled in `install-system.sh`.
+
+---
+
+## Auditd Configuration
+
+The base installer enables auditing for security-sensitive events. The audit log is itself one of the things you'd want to consult during forensic analysis of a terminated instance's ZFS snapshot — it's append-only and bound to the encrypted dataset, so it captures kernel-level events that happened during the instance's lifetime.
+
+```
+-w /run/safebox/zfs-key       -p rwa    -k safebox_zfs_key
+-w /usr/bin/dnf               -p x      -k safebox_pkg
+-w /usr/bin/rpm               -p x      -k safebox_pkg
+-w /usr/local/bin/npm         -p x      -k safebox_pkg
+-w /usr/local/bin/composer    -p x      -k safebox_pkg
+-w /etc/docker/daemon.json    -p wa     -k safebox_config
+-w /etc/php.ini               -p wa     -k safebox_config
+-w /etc/nginx/                -p wa     -k safebox_config
+-a always,exit -F arch=b64 -S setuid -F a0=0 -F auid>=1000 -F auid!=4294967295 -k safebox_priv_esc
+```
+
+These complement the cryptographically-sealed append-only logs that the system component writes for plugin-level operations. Auditd catches kernel-level events; the system component's logs catch plugin-level events. Together they give a complete trail across an entire instance lifetime.
+
+---
+
+## Network Access Summary
+
+After `install-base.sh` runs, the only network access to the instance is:
+
+**Inbound (none by default)**:
+- No SSH (port 22 closed)
+- No telnet (port 23 closed, package removed)
+- No RDP, VNC, FTP, TFTP
+- No SSM Session Manager
+- The `system` component (when installed) listens on `127.0.0.1:7780` — **loopback only**, never bound to a public interface
+- Application traffic — nginx on 443 with TLS, when configured by the application component (not the base)
+
+**Outbound (limited by VPC/security-group)**:
+- HTTPS to AWS API endpoints (for IAM-role-based credentials)
+- HTTPS to configured upstream services (LLM providers, etc., via Safebox Protocol.HTTP)
+- DNS to VPC resolver
+- Whatever else the operator allows in their security group
+
+**Out-of-band**:
+- AWS EC2 Serial Console: depending on AWS account-level setting. The base installer masks getty units so even if Serial Console is enabled, there's no login prompt. We recommend disabling Serial Console at the account level anyway.
+- Nitro hypervisor signals (instance lifecycle): unavoidable, but this is the AWS substrate, not the OS.
+
+---
+
+## Verification Checklist
+
+After running `install-base.sh`, the build pipeline runs `scripts/verify-build.sh`, which checks:
+
+- [x] `zpool list safebox-pool` shows the pool
+- [x] `zfs list -t filesystem safebox-pool` shows the four datasets, all encrypted
+- [x] `zfs get encryption,keystatus safebox-pool/safebox` shows `aes-256-gcm` and `available`
+- [x] `command -v telnetd` returns non-zero (not found)
+- [x] `rpm -q telnet-server` returns non-zero (not installed)
+- [x] `command -v sshd` returns non-zero (SSH server not present)
+- [x] `rpm -q openssh-server` returns non-zero (SSH package not installed)
+- [x] `rpm -q amazon-ssm-agent` returns non-zero (SSM agent not installed)
+- [x] `ss -tnl | grep -E ':(22|23|513|514|5985|5986)$'` returns no rows (no remote-shell ports listening)
+- [x] `systemctl is-active sshd` returns `inactive`
+- [x] `systemctl is-active amazon-ssm-agent` returns `inactive`
+- [x] `systemctl is-active docker` returns `active`
+- [x] `docker info | grep userns` shows the userns mapping
+- [x] `php -i | grep expose_php` shows `Off`
+- [x] `php -i | grep disable_functions` shows the blocklist
+- [x] `auditctl -l | grep safebox` shows the audit rules loaded
+- [x] `cat /opt/safebox/manifests/base.json` shows the component manifest with `"shellAccessPolicy": "zero-interactive-access"`
+
+If any of these fail, the AMI build aborts.
+
+---
+
+## Trade-offs and Counterarguments
+
+### "What if I'm just running a development instance?"
+
+You're not building an attested Safebox if SSH is acceptable. Build with the base installer in your development environment too — practicing the zero-shell workflow during development is how you find the operational gaps before they hit production. If you need SSH for development, fork the installer and remove the SSH-removal block; that fork is no longer Safebox.
+
+### "What about emergency response when something goes wrong?"
+
+The emergency response IS termination and snapshot. If your team isn't prepared to terminate-and-rebuild as the primary incident response, the attestation model isn't a fit. There's nothing wrong with that — it just means a different security architecture is appropriate. We don't pretend attestation guarantees apply to systems where shells are tolerated.
+
+### "AWS sales says SSM is secure"
+
+SSM is more secure than a public SSH port with password authentication. That's a low bar. The point isn't whether SSM is "secure" in some abstract sense — it's that SSM **defeats attestation** the same way SSH does. Any mechanism that lets a remote user spawn `/bin/bash` on the instance defeats attestation. SSM is one such mechanism. We remove it.
+
+### "What if a kernel CVE comes out and I need to patch fast?"
+
+Rebuild the AMI with the patched kernel, redeploy, roll the fleet. The patching cycle for an attested Safebox is measured in fleet-rotation time, not single-instance-patch time. This is by design — patching in place would change the rootfs hash, which would break attestation on the next boot anyway.
+
+If you need sub-hour patch turnaround, attestation isn't your security model — runtime intrusion detection plus mutable patching is. Different tools for different threat models.
+
+---
+
+## Documentation Cross-References
+
+- [CASCADING-MANIFESTS.md](CASCADING-MANIFESTS.md) — How component manifests aggregate into the cascade SHA256
+- [DETERMINISTIC-AI-ONLY-RNG.md](DETERMINISTIC-AI-ONLY-RNG.md) — LD_PRELOAD strategy for reproducible inference
+- [STORAGE-SETUP.md](STORAGE-SETUP.md) — ZFS pool creation procedure (pre-requisite for `install-base.sh`)
+- [AMI-SECURITY-SUMMARY.md](AMI-SECURITY-SUMMARY.md) — Higher-level security overview
+- [FORENSIC-WORKFLOW.md](FORENSIC-WORKFLOW.md) — How to mount a snapshot for offline analysis (replaces "SSH in and debug")
