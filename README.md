@@ -575,7 +575,7 @@ What you keep: outbound HTTPS for AWS API access via IAM-role instance metadata 
 
 These are the items between current state and a defensible "third-party audited" claim. They're tracked on the post-1.0 roadmap; none of them are blockers for developer preview.
 
-- **Third-party security audit.** Engaging a firm like Trail of Bits or NCC Group for a focused 2-3 week review of the Safebox plugin sandbox, the Crypto module, and the credential flow. Estimated $50-150k.
+- **Third-party security audit.** [docs/AUDIT.md](aws/docs/AUDIT.md) is the comprehensive checklist auditors should work through — 278 specific checks across six phases (trust root, base component, system component, cross-component verification, two-AMI diff verification, out-of-band review). The audit happens on AMI-A (with SSH for auditor access); after sign-off, AMI-B is built from the same source with `--remove-ssh` and is byte-identical to AMI-A except for the documented removals. Clients pin to AMI-B's cascade hash.
 - **Confidential Computing instance types.** Move the attested production profile from regular EC2 to AMD SEV-SNP or Intel TDX so AWS hypervisor cannot read guest RAM.
 - **Independent reproducible-build verification.** Right now we ship the cascade SHA256 and trust ourselves. The right model is for someone else to build from source and verify they get the same hash. Planning a public attestation registry for this.
 - **External penetration test.** Different from code audit — tests a deployed instance against runtime, network, and AWS configuration attacks.
@@ -616,6 +616,7 @@ Pre-release security issues: greg@qbix.com. Once we launch a public bug bounty, 
 
 ### Security
 - [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) — Base AMI hardening details
+- [docs/AUDIT.md](docs/AUDIT.md) — Pre-deployment audit checklist (278 checks across 6 phases for third-party auditors)
 - [docs/AMI-SECURITY-SUMMARY.md](docs/AMI-SECURITY-SUMMARY.md) — Higher-level overview
 - [docs/CASCADING-MANIFESTS.md](docs/CASCADING-MANIFESTS.md) — Attestation cascade
 
