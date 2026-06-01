@@ -1,0 +1,16 @@
+{
+  "name": "safebox-autovhost",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-demand nginx vhost + Let's Encrypt cert provisioning for Safebox custom domains",
+  "main": "autovhost.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "acme-client": "5.4.0"
+  },
+  "scripts": {
+    "test": "node test/testAutovhostUnit.js && node test/testAutovhostHandler.js && node test/testAutovhostReload.js"
+  }
+}

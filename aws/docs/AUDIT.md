@@ -451,7 +451,7 @@ ss -tnlp
 ☐ Port 443 (nginx HTTPS) is listening on 0.0.0.0
 ☐ Port 80 (nginx HTTP → HTTPS redirect) is listening on 0.0.0.0
 ☐ Port 3306 (MariaDB) is listening on 127.0.0.1 only
-☐ Port 7780 (system daemon) is listening on 127.0.0.1 only
+☐ System component has NO TCP listener (binds only Unix sockets at /run/safebox/)
 ☐ LLM ports (8080, 8081, etc.) are listening on 127.0.0.1 only
 ☐ NO listener on port 23, 513, 514, 5985, 5986 (anywhere)
 ☐ NO listener on any other public-facing port
@@ -492,165 +492,277 @@ jq -r '.security' /opt/safebox/manifests/base.json
 
 ## Phase 3 — System Component Audit
 
-The `system` component installs the localhost daemon that gates package updates, ZFS clone operations, and Docker invocations. The M-of-N governance enforcement lives here.
+> **Scope**: the `system` component — the Node.js host API service that handles all privileged operations on behalf of Safebox. Listens on per-container Unix domain sockets and one control socket under `/run/safebox/` — never on a TCP port. This is the foundation of A₀ for the system-side API.
 
-### 3.1 — Auth token
+The system component is ~1100 lines of focused Node.js plus ~20 lines of sudoers rules. An auditor reads each file once and gains complete knowledge of what the system component can do.
 
-```bash
-ls -la /srv/safebox/runtimes/system/auth.token
-```
-
-```
-☐ File exists
-☐ Mode is 0640 (owner read/write, group read, others none)
-☐ Owner is safebox-system or equivalent
-☐ Group includes apache and node-safebox (so the plugin can read it)
-☐ File content is exactly 64 hex characters (256 bits as hex), no trailing newline
-☐ File was generated from /dev/urandom (check the installer source)
-☐ The same token is NOT present anywhere else on the filesystem
-  (run `grep -r "$(cat /srv/safebox/runtimes/system/auth.token)" /etc /opt /srv 2>/dev/null`
-   and confirm the only match is the token file itself)
-```
-
-### 3.2 — Daemon process
+### 3.1 — File presence, ownership, and modes
 
 ```bash
-ps -ef | grep system-protocol
-systemctl status safebox-system.service
+ls -la /opt/safebox/system/
+ls -la /etc/systemd/system/safebox-system.service
+ls -la /etc/sudoers.d/safebox-system
+ls -la /etc/safebox/managed-containers.json
+ls -la /etc/safebox/system.hmac
+ls -la /etc/safebox/containers/
+ls -la /run/safebox/
 ```
 
 ```
-☐ Daemon process is running
-☐ Daemon runs as user safebox-system, NOT root
-☐ Daemon's effective UID/GID match the auth token file owner
-☐ systemd unit has Restart=on-failure
-☐ systemd unit has MemoryMax set (e.g. 512M) to bound damage from a daemon bug
-☐ systemd unit has TasksMax set (e.g. 100)
-☐ systemd unit has NoNewPrivileges=true
-☐ systemd unit has ProtectSystem=strict
-☐ systemd unit has ProtectHome=true
-☐ systemd unit has PrivateTmp=true
-☐ systemd unit has PrivateDevices=true (or specific device allowlist)
-☐ systemd unit grants CAP_SYS_ADMIN ONLY if absolutely necessary for ZFS operations
-  (and ideally CAP_SYS_ADMIN is dropped after initialization)
+☐ /opt/safebox/system/ exists, mode 0755, owner root:root
+☐ All System component source files present and read-only (0644, root:root):
+    server.js, sockets.js, auth.js, secret.js, config.js,
+    opsSystem.js, opsTest.js, opsModels.js, opsContainers.js,
+    nsmClient.js, cborDecode.js, package.json
+☐ /etc/systemd/system/safebox-system.service exists, 0644, root:root
+☐ /etc/sudoers.d/safebox-system exists, mode 0440, root:root, validates with `visudo -c`
+☐ /etc/safebox/managed-containers.json exists, mode 0644 (or 0640), root:root
+☐ /etc/safebox/system.hmac exists, mode 0640, root:safebox-infra-readers, length exactly 32 bytes
+☐ /etc/safebox/containers/ exists, mode 0750, owner safebox-infra:safebox-infra
+☐ /etc/safebox/containers/<name>.hmac files exist for every managed container,
+    mode 0640, owner safebox-infra, length exactly 32 bytes each
+☐ User safebox-infra exists (system user, no home, no shell)
+☐ Group safebox-infra-readers exists; safebox-infra is a member
+☐ /srv/zfs-clones exists, mode 0750, owner safebox-infra
 ```
 
-### 3.3 — Wire protocol behavior
-
-Test the daemon's wire protocol from the localhost. From AMI-A's audit shell:
+### 3.2 — Socket listeners (the entire API surface)
 
 ```bash
-TOKEN=$(sudo cat /srv/safebox/runtimes/system/auth.token)
-
-# Test 1: missing auth → 401
-curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-    -d '{"user":"test","subsystem":"image","action":"list"}'
-
-# Test 2: wrong auth → 401, constant-time
-curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-    -d '{"auth":"0000000000000000000000000000000000000000000000000000000000000000","user":"test","subsystem":"image","action":"list"}'
-
-# Test 3: valid auth, test tier, allowed subsystem → 200
-curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-    -d "{\"auth\":\"$TOKEN\",\"user\":\"test\",\"subsystem\":\"image\",\"action\":\"list\"}"
-
-# Test 4: valid auth, test tier, FORBIDDEN subsystem → 403
-curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-    -d "{\"auth\":\"$TOKEN\",\"user\":\"test\",\"subsystem\":\"package\",\"action\":\"install\"}"
-
-# Test 5: valid auth, system tier, package install WITHOUT M-of-N → 403 or signature error
-curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-    -d "{\"auth\":\"$TOKEN\",\"user\":\"system\",\"subsystem\":\"package\",\"action\":\"install\",\"params\":{\"manager\":\"npm\",\"packages\":[\"left-pad\"]}}"
-
-# Test 6: rate limiting works — flood with valid requests
-for i in {1..200}; do
-    curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-        -d "{\"auth\":\"$TOKEN\",\"user\":\"test\",\"subsystem\":\"image\",\"action\":\"list\"}" > /dev/null
-done
-# Then one more — should get RATE_LIMITED with retryAfter
-curl -s -X POST http://127.0.0.1:7780/ -H 'Content-Type: application/json' \
-    -d "{\"auth\":\"$TOKEN\",\"user\":\"test\",\"subsystem\":\"image\",\"action\":\"list\"}"
+ss -lxnp | grep safebox       # all unix domain listeners under /run/safebox
+ss -ltnp                       # confirm NO TCP listener for safebox-infra
+ls -la /run/safebox/ /run/safebox/containers/
 ```
 
 ```
-☐ Test 1 returns {"status":"error","code":"UNAUTHORIZED"} with HTTP 401
-☐ Test 2 returns {"status":"error","code":"UNAUTHORIZED"} with HTTP 401
-☐ Test 2 timing is within 10% of Test 1 timing across 100 trials (constant-time)
-☐ Test 3 returns {"status":"ok","data":...} with HTTP 200
-☐ Test 4 returns {"status":"error","code":"PERMISSION_DENIED"} with HTTP 403
-☐ Test 5 returns either PERMISSION_DENIED OR SIGNATURE_REQUIRED (with M-of-N rejection)
-☐ Test 6 eventually returns {"status":"error","code":"RATE_LIMITED","retryAfter":N}
-☐ The daemon's log at /srv/safebox/logs/system/operations/*.jsonl records each call
-☐ Log entries are hash-chained (each line's "prevHash" matches the previous line's hash)
-☐ Auth tokens are NEVER logged (grep for the token value in logs; should not appear)
+☐ System component has NO TCP listener at all (confirm `ss -ltnp` shows nothing
+    owned by safebox-infra)
+☐ /run/safebox/control.sock exists, mode 0660, owner safebox-infra:safebox-infra
+☐ /run/safebox/containers/<name>.sock exists for every managed container,
+    mode 0660, owner safebox-infra:safebox-infra
+☐ Process listening on each socket is owned by safebox-infra (verify `ss -lxnp` output)
+☐ /run/safebox/ is mode 0750, owner safebox-infra (created by systemd RuntimeDirectory)
+☐ Per-container HMAC keys are HKDF-derived (verify by deriving from master + container
+    name using secret.derivePerContainerKey() and comparing bytes against the file)
 ```
 
-### 3.4 — M-of-N enforcement
 
-The system component is supposed to require M-of-N signatures before invoking package managers (or any privileged operation). Verify this is actually enforced, not just spec'd.
+### 3.3 — sudoers — the entire privileged surface
 
-```
-☐ Read scripts/components/system/install-system.sh or the daemon source.
-  Confirm that `user='system'` calls require a `signatures` field in the request.
-☐ The signatures field is an array of {signer, signature} objects
-☐ The daemon has a configured signer set (M and N values) stored at a known path
-☐ The daemon verifies each signature against:
-    - The signer's public key in the signer set
-    - The canonical JSON of the request payload (consistent canonicalization,
-      e.g. RFC 8785 JCS or equivalent)
-    - The current request nonce/timestamp to prevent replay
-☐ The daemon requires AT LEAST M valid signatures from distinct signers in the set of N
-☐ Replay protection: the same nonce cannot be used twice (check the nonce store
-  implementation — should be persistent across daemon restarts)
-☐ Try a request with M-1 signatures — should be rejected
-☐ Try a request with M signatures from the SAME signer (counted N times) — should be rejected
-☐ Try a request with M signatures but wrong canonicalization (extra whitespace, reordered keys) — should be rejected
-☐ Try a request with M valid signatures and a replayed nonce — should be rejected
-☐ Try a request with M valid signatures and a future timestamp (skew check) — should be rejected
+`/etc/sudoers.d/safebox-system` is the system component's permission to elevate. Read every line. The Cmnd_Alias entries define EXACTLY what binaries and exactly what argument shapes the system component can run as root.
+
+```bash
+cat /etc/sudoers.d/safebox-system
+visudo -c -f /etc/sudoers.d/safebox-system
 ```
 
-### 3.5 — Docker integration
-
 ```
-☐ The daemon talks to Docker via /var/run/docker.sock with PROPER permissions
-  (the daemon's user is in the docker group, or has explicit ACL, but is not root)
-☐ The PHP-FPM user (apache) is NOT in the docker group — confirm with `groups apache`
-☐ The Node user (node-safebox) is NOT in the docker group either
-☐ Test environment containers are spawned with:
-    --user nobody (or specific non-root UID)
-    --network none
-    --read-only
-    --tmpfs /tmp:size=64m,mode=1777
-    --memory <limit from manifest>
-    --cpus <limit from manifest>
-    --stop-timeout 5
-    --security-opt no-new-privileges
-    --cap-drop all
-    --cap-add (only specific caps if needed)
-☐ Test environment containers CANNOT bind any host port (verify with `docker run` and an attempted -p flag from inside)
-☐ Test environment containers CANNOT mount arbitrary host paths (mounts are controlled by the daemon)
+☐ File passes `visudo -c` validation
+☐ `safebox-infra ALL=(root) NOPASSWD: ...` line is present
+☐ Cmnd_Alias SAFEBOX_DNF restricts dnf to specific verbs only (install / remove / upgrade / list / check-update)
+☐ Cmnd_Alias SAFEBOX_ZFS restricts zfs operations to datasets under `safebox-pool/`
+  Specifically: snapshot / clone / create / destroy / rollback only, NOT send / receive / mount / unmount
+☐ Cmnd_Alias SAFEBOX_DOCKER restricts docker to `run --detach *` (with safebox-test-* prefix
+  enforceable via labels, not sudoers patterns alone), plus `logs -f`, `wait`, `rm -f` against safebox-test-*
+☐ Cmnd_Alias SAFEBOX_MKDIR restricts mkdir to under /srv/zfs-clones/
+☐ NO entries grant: `dnf shell`, `dnf history undo`, `zfs send`, `zfs receive`,
+  `docker exec`, `docker run` without `--detach`, `docker run -v /:`, generic mkdir
+☐ Defaults entries scope to this file's binaries only (Defaults!/usr/bin/dnf, ...)
+  to avoid changing global sudo behavior
 ```
 
-### 3.6 — ZFS clone lifecycle
+### 3.4 — config.js: managed-containers.json loader
 
-```
-☐ Create a test environment via the daemon and verify:
-    ☐ A new ZFS snapshot is created on the source dataset
-    ☐ A new ZFS clone is created from that snapshot
-    ☐ The clone is mounted under /srv/zfs-clones/<testId>/
-    ☐ The clone has its own quota (10 GB per the spec)
-☐ Destroy the environment and verify:
-    ☐ The clone is unmounted
-    ☐ `zfs destroy` removes the clone
-    ☐ `zfs destroy` ALSO removes the snapshot (it's tied to the clone)
-    ☐ /srv/zfs-clones/<testId>/ no longer exists
-    ☐ The original dataset is unaffected (compare `zfs list -t snapshot` before and after)
-☐ Create an environment, kill the daemon mid-execution, restart the daemon:
-    ☐ The orphan clone is cleaned up on daemon restart (or after TTL expires)
-    ☐ No long-lived orphan clones accumulate
+```bash
+cat /opt/safebox/system/config.js
 ```
 
----
+```
+☐ CONFIG_PATH defaults to /etc/safebox/managed-containers.json
+☐ env-var override (SAFEBOX_SYSTEM_CONFIG) is gated behind a clearly-test-only path
+☐ loadFile() returns null on parse failure rather than throwing — reload-safe
+☐ reload() refuses to replace good config with broken config (silent denial)
+☐ imageMatches() compiles imagePattern strings to RegExp at load time
+☐ actionAllowed() does a simple includes() check — no regex, no dynamic eval
+☐ SIGHUP handler calls reload() and nothing else
+```
+
+### 3.5 — auth.js: HMAC verification
+
+```bash
+cat /opt/safebox/system/auth.js
+```
+
+```
+☐ canonicalize() joins fields with `\n` literal, not `\r\n` or `/`
+☐ verify() validates timestamp matches `^\d{1,11}$` before parsing
+☐ verify() validates nonce matches `^[a-f0-9]{32}$`
+☐ verify() validates provided signature matches `^[a-f0-9]{64}$`
+☐ Timestamp skew check uses signed math (|now - ts| > 300)
+☐ Nonce LRU prune happens BEFORE the set lookup (prevents stale-nonce reuse)
+☐ Signature compare uses `crypto.timingSafeEqual` with equal-length buffers
+☐ Failed verify() returns a structured object — never throws on untrusted input
+☐ Successful verify() inserts nonce into LRU; failed verify() does NOT
+  (otherwise an attacker could DOS the LRU with garbage)
+```
+
+### 3.6 — secret.js: HMAC key derivation
+
+```bash
+cat /opt/safebox/system/secret.js
+```
+
+```
+☐ Preference order is: TPM-derived → existing-on-disk → random
+☐ TPM derivation uses HKDF-SHA-256 with a fixed info string and salt
+☐ TPM path falls through silently to next option on any read failure
+☐ Random fallback logs WARN to stderr (operator must notice)
+☐ writeSecret uses atomic rename (tmp file → rename)
+☐ writeSecret sets mode 0640 explicitly, never world-readable
+☐ Returned key is exactly 32 bytes (verified by length check in readExisting)
+```
+
+### 3.7 — opsSystem.js: tool dispatch and execFile
+
+```bash
+cat /opt/safebox/system/opsSystem.js
+grep -nE 'spawn|execSync|exec\(' /opt/safebox/system/opsSystem.js
+```
+
+```
+☐ Only execFile is used (never spawn with shell:true, never exec, never execSync)
+☐ Every TOOL_BUILDERS entry returns [binary, argv-array]; the binary is an absolute path
+☐ The `--` separator appears before user-supplied tokens (packages, etc.) for every mutating action
+☐ validatePackages enforces the leading-char-not-dash rule, defeating --registry=evil
+☐ resolveWorkspace uses fs.realpathSync, then prefix check — never trusts relative paths
+☐ WORKSPACE_PREFIX defaults to /srv/encrypted/apps/ AND consults zfsVolumes from managed-containers
+☐ run() spawns with clean env (PATH/HOME/LANG/LC_ALL/GIT_*) — no inherited env
+☐ run() pipes stdin to /dev/null (child.stdin.end()) so no shell can hang on input
+☐ stdout/stderr captures are size-capped (64 KiB / 16 KiB)
+☐ Timeout enforced via execFile's timeout option, with SIGKILL on overrun
+☐ dnf check-update exit code 100 mapped to success (dnf-specific quirk, not hidden)
+☐ dnf is restricted to managedContainer='_host'. validateRequest() rejects any other
+  managedContainer requesting tool=dnf with FORBIDDEN_ACTION. This check happens
+  BEFORE the allowedActions check, so even if a real app's allowedActions includes
+  "dnf" by mistake, the request is still rejected.
+```
+
+### 3.8 — opsTest.js: test environment lifecycle
+
+```bash
+cat /opt/safebox/system/opsTest.js
+```
+
+```
+☐ Each test allocates a fresh ZFS clone under safebox-pool/zfs-clones/<testId>
+☐ ZFS snapshot of sourceClone happens FIRST; clone creation second; on clone
+  failure the snapshot is destroyed (no leak)
+☐ docker run uses: --user nobody, --network none, --read-only,
+  --tmpfs /tmp:size=64m, --cap-drop ALL, --security-opt no-new-privileges
+☐ envVars validation: key matches ^[A-Z][A-Z0-9_]{0,63}$, value bounded to 8192 chars,
+  no \n / \r / \0
+☐ command array validation: ≤ 64 elements, each ≤ 4096 chars, strings only
+☐ Keepalive watchdog: setTimeout with cleanupContainer on expiry
+☐ Max lifetime watchdog: separate setTimeout, cannot be reset by keepalive
+☐ Ring buffer enforces 4 MiB cap per test; truncated:true flag on overflow
+☐ cleanupContainer kills docker AND destroys ZFS clone AND destroys snapshot;
+  best-effort with timeouts on each
+☐ Test record GC'd 10 minutes after termination
+☐ shutdownAll() tears down all live tests on SIGTERM
+```
+
+### 3.9 — server.js: routing, audit, error handling
+
+```bash
+cat /opt/safebox/system/server.js
+```
+
+```
+☐ Body size cap (1 MiB) enforced before parsing
+☐ HMAC verify happens BEFORE parsing JSON body (untrusted JSON not parsed until auth passes)
+☐ HMAC verify uses req.url (path + query string) verbatim — same canonicalization both sides
+☐ Audit entries written via systemd-cat with structured JSON
+☐ Audit fallback to stderr never crashes the system component on systemd-cat pipe errors
+☐ All routes match exact regexes — no catch-all path that could surprise
+☐ NOT_FOUND status code is 404, NOT 200
+☐ SIGTERM/SIGINT handlers call shutdownAll() before exiting (no orphan test containers)
+```
+
+### 3.10 — opsModels.js: model supply chain
+
+```bash
+cat /opt/safebox/system/opsModels.js
+```
+
+```
+☐ requireHostScope() is the FIRST check in handleInstall, handleList,
+  handleVerify, handleRemove. Non-_host managedContainer is rejected with
+  FORBIDDEN_ACTION before any other work.
+☐ canonicalize() produces deterministic output for any manifest the Safebox
+  side might send. Key sorting, no whitespace, integer-only numbers.
+  (Re-verify against test/testModelsCanonical.js test vectors.)
+☐ The install flow computes the canonical hash and rejects if it doesn't
+  match the supplied manifestHash. This check happens BEFORE any download.
+☐ Every downloaded file has its SHA-256 verified against the manifest
+  BEFORE being moved from staging to the active models directory.
+☐ Size cap on each file (200 GB) prevents OOM / disk fill.
+☐ HTTPS-only sources. Plain http URLs are rejected at manifest validation.
+☐ Per-file source fallback: if one source fails, try the next. All sources
+  exhausted -> DOWNLOAD_FAILED (502), no partial install.
+☐ Atomic install via rename from staging dir. If anything throws, staging
+  dir is rm'd and the active models dir is never touched.
+☐ Atomic remove via rename to .trash then rm. No window where the model
+  dir exists in a corrupt state.
+☐ The directory name on disk IS the manifest hash. An auditor can hash
+  the manifest.json inside the directory and confirm it matches.
+☐ Verify endpoint actually re-reads every byte and re-hashes it. Not just
+  checking file existence.
+☐ Path traversal in manifest files[].path is rejected at validation
+  (../, leading /, backslash, etc.)
+```
+
+### 3.11 — Smoke test (end-to-end)
+
+```bash
+# As root, with the system component running:
+SECRET_HEX=$(xxd -p /etc/safebox/system.hmac | tr -d "\n")
+# Run the smoke harness from the repo:
+node aws/scripts/components/system/test/smoke.js
+```
+
+```
+☐ T1: signed /healthz returns 200
+☐ T2: bad signature returns 401
+☐ T3: replayed nonce returns 401 with reason=nonce_reuse
+☐ T4: unknown endpoint returns 404
+☐ T5: unknown managedContainer returns BAD_REQUEST
+☐ T6: tool not in allowedActions returns 403 FORBIDDEN_ACTION
+☐ T7: --registry=evil package name returns BAD_REQUEST
+☐ T8: valid /system request reaches execFile (returns NPM_OP_FAILED if npm not in PATH for this sandbox, or OK if installed)
+☐ T9: workspaceRoot=/etc returns WORKSPACE_NOT_FOUND
+☐ T10: image not matching imagePattern returns IMAGE_NOT_ALLOWED
+☐ T11: GET /test/<unknown> returns 404 TEST_NOT_FOUND
+☐ T12: audit log shows one entry per request with managedContainer, tool, action, durationMs
+```
+
+### 3.12 — What is intentionally absent
+
+Compared to the prior daemon designs:
+
+```
+☐ No long-polling, no /jobs subsystem, no internal job state machine
+☐ No keepalive timers in the system component except for /test/<id> environments
+☐ No request-files-in-/run/safebox/jobs (no filesystem-mediated wire)
+☐ No polkit rule, no systemd templates per-operation
+☐ No HMAC over per-op tokens; HMAC is at the HTTP layer only
+☐ No exec, no eval, no shell:true, no string-concat command lines anywhere
+☐ No catch-all "system.exec" or "system.run" endpoint
+☐ No remote / cross-host listener; loopback only
+☐ No retry / backoff state held on the system component; clients retry if they want to
+☐ No NPM dependencies (package.json has dependencies: {})
+```
+
+If anything in this list IS present in `/opt/safebox/system/`, the audit fails — it means someone added capability that wasn't reviewed.
 
 ## Phase 4 — Cross-Component Verification
 
@@ -664,25 +776,31 @@ sha256sum /opt/safebox/manifests/*.json
 ```
 
 ```
-☐ One manifest per installed component (base.json, system.json, llm-medium.json, etc.)
-☐ Each manifest declares its own SHA256 (or the parent does)
-☐ The parent /opt/safebox/manifests/cascade.json (or equivalent) lists every component
+☐ One manifest per installed component. For 1.0 that means exactly two:
+    base.json, system.json
+☐ Each manifest declares its own SHA256 (or the parent cascade.json does)
+☐ The cascade.json (or equivalent parent manifest) lists every component
   and its SHA256
 ☐ Computing SHA256 of the cascade.json file matches what verify-attestation.sh expects
 ☐ TPM PCR for the cascade matches the computed value
 ```
 
+> If you find any third manifest beyond base.json and gateway.json, flag it. 1.0 ships exactly those two components. Additional tiers (llm-*, media, vision, speech) are documented in `docs/future/` but not buildable yet.
+
 ### 4.2 — User account inventory
 
 ```bash
-getent passwd | grep -E 'safebox|nginx|apache|mysql|node|llm|docker'
+getent passwd | grep -E 'safebox|nginx|apache|mysql|docker'
 ```
 
 ```
 ☐ Exactly these system users exist (no extras):
-    apache, mysql, nginx, node-safebox, llm-safebox, safebox-system,
-    dockremap, nobody (system default)
-☐ Each has /sbin/nologin or /usr/sbin/nologin shell (none have /bin/bash)
+    apache, mysql, nginx, safebox-infra, dockremap, nobody (system default)
+☐ The `safebox-infra` user is the runtime user for the system component
+    - shell is /sbin/nologin
+    - home is /var/empty
+    - member of the `safebox-infra-readers` group
+☐ Each system user has /sbin/nologin or /usr/sbin/nologin shell (none have /bin/bash)
 ☐ None have a home directory writable by themselves
 ☐ None are in the wheel/sudo group
 ☐ No user has UID 0 except root
@@ -693,14 +811,15 @@ getent passwd | grep -E 'safebox|nginx|apache|mysql|node|llm|docker'
 
 ```bash
 # Check that secrets are NOT world-readable
-find /srv /opt/safebox -type f \( -perm /o+r -o -perm /o+w \) -ls 2>/dev/null | \
-    grep -E "(key|secret|token|password|credential)"
+find /srv /opt/safebox /etc/safebox -type f \( -perm /o+r -o -perm /o+w \) -ls 2>/dev/null | \
+    grep -E "(key|secret|token|password|credential|hmac)"
 ```
 
 ```
 ☐ No file matches the above (all secrets are non-world-readable)
 ☐ /run/safebox/zfs-key is mode 0400, owner root
-☐ /srv/safebox/runtimes/system/auth.token is mode 0640
+☐ /etc/safebox/system.hmac is mode 0640, group safebox-infra-readers
+☐ /etc/safebox/aws-nitro-root.pem is mode 0644 (public; pinned by fingerprint)
 ☐ /etc/shadow is mode 0600 (or 0640, group=shadow)
 ☐ /etc/sudoers and /etc/sudoers.d/ are mode 0440
 ☐ No SUID binaries in /opt/safebox/ or /srv/ (run `find /opt/safebox /srv -perm -4000 -ls`)
@@ -734,7 +853,7 @@ If any of the above are missing or wrong, flag for the build team. install-base.
 
 ### 4.5 — Systemd unit hardening
 
-For each non-trivial service (nginx, php-fpm, mariadb, docker, safebox-system, the LLM serving units):
+For each non-trivial service (nginx, php-fpm, mariadb, docker, safebox-system):
 
 ```bash
 systemctl show <unit> -p NoNewPrivileges,ProtectSystem,ProtectHome,PrivateTmp,\
@@ -742,7 +861,9 @@ systemctl show <unit> -p NoNewPrivileges,ProtectSystem,ProtectHome,PrivateTmp,\
 ```
 
 ```
-☐ NoNewPrivileges=yes for all (where possible — Docker daemon may need this off)
+☐ NoNewPrivileges=yes for nginx, php-fpm, mariadb (Docker daemon may need this off;
+    safebox-system MUST be off because the system component uses sudo to elevate for
+    dnf/zfs/docker — see Phase 3.3 sudoers audit)
 ☐ ProtectSystem=strict or full for all
 ☐ ProtectHome=yes for all
 ☐ PrivateTmp=yes for all

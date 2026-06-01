@@ -1,0 +1,56 @@
+[Unit]
+Description=Safebox autovhost (on-demand nginx vhost + ACME provisioning)
+Documentation=https://github.com/safebots/safebox/blob/main/aws/scripts/components/autovhost/README.md
+After=network-online.target nginx.service
+Wants=network-online.target
+Requires=nginx.service
+
+[Service]
+Type=simple
+User=safebox-infra
+Group=safebox-infra
+# autovhost needs to:
+#   - read /etc/safebox/autovhost.json  (optional config override)
+#   - read /var/lib/safebox/autovhost/acme-account.key
+#   - write /var/lib/safebox/autovhost/challenges/<token>
+#   - write /etc/nginx/conf.d/auto/<host>.conf and /etc/nginx/conf.d/auto-certs/*
+#   - exec /usr/sbin/nginx -s reload
+#
+# /etc/nginx/conf.d/auto and /etc/nginx/conf.d/auto-certs need write access
+# for safebox-infra. The install script sets ownership accordingly via
+# supplementary group, or we use AmbientCapabilities to allow nginx -s reload.
+
+ExecStart=/usr/bin/node /opt/safebox/autovhost/autovhost.js
+Restart=on-failure
+RestartSec=10s
+
+# State directory
+StateDirectory=safebox/autovhost
+StateDirectoryMode=0750
+
+# Hardening — slightly less aggressive than dnsclient because we need to
+# write into /etc/nginx and exec /usr/sbin/nginx.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+# Resource caps
+MemoryMax=256M
+TasksMax=64
+
+# Bind paths
+ReadOnlyPaths=/etc/safebox
+ReadWritePaths=/var/lib/safebox/autovhost /etc/nginx/conf.d/auto /etc/nginx/conf.d/auto-certs /run/safebox
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

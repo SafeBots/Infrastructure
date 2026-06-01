@@ -1,0 +1,64 @@
+# /etc/sudoers.d/safebox-system
+#
+# Allows the safebox-infra user to run a specific set of privileged commands
+# without password. This is the entire privileged surface of the system
+# component. An auditor reads this file and the systemd unit and knows
+# exactly what the system can do.
+#
+# Rules:
+#   - dnf: install / remove / upgrade / list / check-update
+#   - zfs: snapshot / clone / rollback / create / destroy / list
+#   - docker: run (with --detach), logs, wait, rm
+#   - mkdir for the zfs clone mountpoints (necessary before docker mounts)
+#
+# Defaults that apply only to this file. The leading "Defaults!" pattern
+# scopes them to the listed binaries, not globally.
+Defaults!/usr/bin/dnf, /usr/sbin/zfs, /usr/bin/docker, /usr/bin/mkdir !requiretty
+Defaults!/usr/bin/dnf, /usr/sbin/zfs, /usr/bin/docker, /usr/bin/mkdir env_reset
+Defaults!/usr/bin/dnf, /usr/sbin/zfs, /usr/bin/docker, /usr/bin/mkdir secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# dnf — all package management ops
+Cmnd_Alias SAFEBOX_DNF = /usr/bin/dnf -y --setopt=install_weak_deps=False install -- *, \
+                         /usr/bin/dnf -y remove -- *, \
+                         /usr/bin/dnf -y --setopt=install_weak_deps=False upgrade, \
+                         /usr/bin/dnf list installed, \
+                         /usr/bin/dnf check-update
+
+# zfs — snapshot, clone, rollback, create, destroy.
+# Restricted to safebox-pool/ via wildcard guard.
+Cmnd_Alias SAFEBOX_ZFS = /usr/sbin/zfs snapshot -- safebox-pool/*, \
+                        /usr/sbin/zfs clone -o mountpoint=* -o quota=10G -- safebox-pool/* safebox-pool/zfs-clones/*, \
+                        /usr/sbin/zfs create -o mountpoint=* -o quota=10G -- safebox-pool/zfs-clones/*, \
+                        /usr/sbin/zfs destroy -- safebox-pool/*, \
+                        /usr/sbin/zfs destroy -r -- safebox-pool/*, \
+                        /usr/sbin/zfs rollback -- safebox-pool/*, \
+                        /usr/sbin/zfs rollback -r -- safebox-pool/*
+
+# docker — run detached for test envs, then logs/wait/rm
+Cmnd_Alias SAFEBOX_DOCKER = /usr/bin/docker run --detach *, \
+                            /usr/bin/docker logs -f safebox-test-*, \
+                            /usr/bin/docker wait safebox-test-*, \
+                            /usr/bin/docker rm -f safebox-test-*
+
+# docker exec — for per-app package management. The System component routes
+# npm/pip/cargo/gem/composer/git requests for non-_host containers through
+# `sudo docker exec --user safebox-app --workdir <path> <container> <tool> ...`.
+# Sudoers constrains: container name starts with safebox-app- or safebox-mariadb-,
+# user is safebox-app (or mysql for mariadb), tool is one of the known binaries.
+# The Node side validates argv shape and containerWorkdir BEFORE invoking sudo;
+# sudoers is the constitutional limit, not the only check.
+Cmnd_Alias SAFEBOX_DOCKER_EXEC_APP = \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/local/bin/npm *, \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/local/bin/pip *, \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/local/bin/cargo *, \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/local/bin/gem *, \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/local/bin/composer *, \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/bin/git *, \
+    /usr/bin/docker exec --user safebox-app --workdir /* safebox-app-* /usr/bin/cat -- /*
+
+# mkdir for clone mountpoints (the parent dir is the system component's, but
+# subdirectories inside the ZFS clone mount belong to root by default)
+Cmnd_Alias SAFEBOX_MKDIR = /usr/bin/mkdir -p /srv/zfs-clones/*
+
+# Grant
+safebox-infra ALL=(root) NOPASSWD: SAFEBOX_DNF, SAFEBOX_ZFS, SAFEBOX_DOCKER, SAFEBOX_DOCKER_EXEC_APP, SAFEBOX_MKDIR

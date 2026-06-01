@@ -3,680 +3,363 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0--pre-yellow.svg)](CHANGELOG.md)
 [![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](CHANGELOG.md)
-[![Models](https://img.shields.io/badge/models-70+-orange.svg)](docs/SAFEBOX-FINAL-APRIL-2026.md)
-[![Components](https://img.shields.io/badge/components-20-blueviolet.svg)](#composable-components)
 
-**Trusted, Attested Safebox Infrastructure for Organizations and Businesses to Reproduce and Verify**
+**Attested AMI for hosting the Safebox plugin.** Hardware-bound HMAC, deterministic build, single auditable HTTP API between Safebox and the host (the System component).
 
 > **Status**: Pre-release working tree for the 1.0.0 launch. Versioning is held at 1.0.0 until first publication; subsequent changes increment 1.0.x.
 
 ---
 
-*Production-grade cloud infrastructure specifications: hardware attestation, deterministic builds, package manager pinning, ZFS test environments, and multi-cloud support (AWS, GCP, Azure).*
+## What this repo is
 
-> **Scope**: This repository covers the **Linux / AMI / server-runtime** layer only — OS install, ZFS setup, package management, container runtime, AI models, and the localhost API surface that the Safebox plugin uses. The Safebox plugin itself (PHP/Node code that runs the governance pipeline, capabilities, and Protocol.* primitives) lives in a separate [Safebox repo](https://github.com/Safebots/Safebox).
+This repo builds an attested cloud AMI that runs the Safebox plugin. It is intentionally a thin Linux-level runtime layer: hardened OS, encrypted ZFS, hardened Docker, a single HTTP API (the System component) for the Safebox plugin to call when it needs to do something privileged on the host.
 
----
+**The 1.0 installable surface is four components:**
 
-## 📋 Table of Contents
+- **`base`** — pinned packages, encrypted ZFS pool, hardened Docker, hardened PHP-FPM, hardened sysctls, SSH removed on the production AMI. The OS configuration that an auditor reads once and trusts.
+- **`system`** — a small Node.js host service listening on per-container Unix domain sockets (one per managed container, plus one control socket for host operations). Safebox Node connects to a bind-mounted socket inside its container; the system component knows which container is calling from kernel-enforced socket identity, verifies the HMAC against that container's derived key, validates the request against `managed-containers.json`, dispatches to `child_process.execFile`, returns results. Test environments use a ZFS clone + keepalive pattern (aggressive 60s teardown unless pinged). The master HMAC key is bound to AWS Nitro attestation PCRs via HKDF — copying the disk to a different host produces a different key, and per-container keys are themselves HKDF-derived from the master so each container's key is cryptographically independent. See [`aws/docs/Safebox.md`](aws/docs/Safebox.md) for the transport and integration spec.
+- **`dnsclient`** — separate systemd unit that handles IP announcement to the central DNS API. On boot reads its `safeboxId` + `accountToken` from `/etc/safebox/dnsclient.json` (populated by cloud-init from EC2 user-data), discovers its public IP via IMDSv2, generates a Nitro attestation document with `(safeboxId, reportedIp, challenge, timestamp)` bound into `user_data`, and POSTs to the configured DNS API. Re-announces on IP change and hourly heartbeat. Serves an HTTP challenge endpoint at port 8443 so the DNS API can confirm IP control. Separate process from `system` so dnsclient bugs can't reach the master HMAC key.
+- **`autovhost`** — separate systemd unit that handles custom-domain provisioning. Listens on a Unix socket; nginx forwards unknown-Host requests via a mirror directive. Cascade: negative cache → DNS sanity check → ACME HTTP-01 against Let's Encrypt → write per-host server block + cert → debounced nginx reload. Lets customers attach arbitrary domains by pointing DNS at the box.
 
-- [What's in this Repo](#whats-in-this-repo)
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-  - [Composable Components](#composable-components)
-  - [System Protocol — Interface to Safebox Plugin](#system-protocol--interface-to-safebox-plugin)
-  - [LLM Tiers](#llm-tiers)
-  - [Storage Architecture (ZFS + Docker + MariaDB)](#storage-architecture-zfs--docker--mariadb)
-  - [Deterministic Inference](#deterministic-inference)
-- [Features](#features)
-  - [Package Manager Version Pinning](#package-manager-version-pinning)
-  - [ZFS Test Environment Cloning](#zfs-test-environment-cloning)
-  - [Image Manifest Contract](#image-manifest-contract)
-- [Build System](#build-system)
-- [Security](#security)
-  - [Threat model](#threat-model)
-  - [What's defended](#whats-defended)
-  - [What's pending before we'd claim "audited"](#whats-pending-before-wed-claim-audited)
-- [License Compliance](#license-compliance)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [Roadmap](#roadmap)
-- [Support](#support)
+That's the actual 1.0 deliverable. Roughly 5800 lines of Node across all four components (System ~4200, dnsclient ~1000, autovhost ~600 plus the acme-client dependency) plus a ~400-line base installer plus the pinned-package manifest. The System component is the bulk; dnsclient and autovhost are small focused services that can each be audited in an afternoon.
 
----
+## What this repo ALSO contains (designs and references, not yet installable)
 
-## What's in this Repo
+These exist as engineering reference and pre-1.0 design work. They have spec docs and partial code, but no `install-<tier>.sh` script and no smoke tests against real hardware:
 
-This repo builds attested AWS AMIs (with planned GCP/Azure images) that ship the **Linux-level runtime** the Safebox plugin runs on. It is intentionally a thin layer:
+- **AI model supply chain (1.0 surface)** — the system component ships endpoints under `/models/*` ([wire spec](aws/docs/MODELS-PROTOCOL.md)) for installing, listing, verifying, and removing model weights. Every model is identified by the SHA-256 of its canonical manifest JSON; that hash is what Safebox M-of-N signs. Weights are downloaded from HTTPS sources (Hugging Face, S3, mirrors), verified against the manifest before any other process can touch them, and installed atomically into `/srv/safebox/models/<manifestHash>/`. Same `_host` scope as `dnf` — a compromised app-tenant cannot swap model weights without governance. The supply chain itself is 1.0; what's not yet 1.0 are the *runner containers* that consume the installed weights.
+- **AI model runners** — [`model-runners/privacy-filter/`](model-runners/privacy-filter/) has a working 448-line FastAPI service (PII redaction); [`model-runners/stable-audio-3/`](model-runners/stable-audio-3/) has the skeleton for Stable Audio 3 (text-to-music + sound effects); [`model-runners/vllm/runner_extensions.py`](model-runners/vllm/runner_extensions.py) extends vLLM for the deterministic-inference path. The full ~80-model catalog with sizes and licenses is in [`docs/MODEL-CATALOG.md`](docs/MODEL-CATALOG.md); the runner inference protocol spec is in [`docs/MODEL-RUNNER-API-SPEC.md`](docs/MODEL-RUNNER-API-SPEC.md). What's missing: component installers (`aws/scripts/components/llm-tiny/install-llm-tiny.sh`, etc.) that publish model manifests, start the runner systemd units, and wire model serving sockets into the system component. Post-1.0 work.
+- **Speech and vision tiers** — design docs under [`docs/future/`](docs/future/) (VibeVoice ASR, Nemotron-Omni, speech protocol implementation). Same status: real spec work, no installers yet.
+- **Composable architecture** — the original design called for 20 modular components ([`docs/future/SAFEBOX-COMPOSABLE-ARCHITECTURE.md`](docs/future/SAFEBOX-COMPOSABLE-ARCHITECTURE.md)). 1.0 ships two of them (base + system), with the system component's `/models` endpoints serving as the foundation for the model-tier components to plug into.
+- **GCP, Azure, and Oracle Cloud builds.** All three have TPM-based attestation suitable for the same architectural pattern. Implementation effort discussed below in "Multi-cloud."
 
-**What we provide:**
+The split is honest: 1.0 ships a complete, auditable AWS AMI with the system component (including the model supply chain), the base component, and the privacy-filter runner. Everything else is real engineering work for 1.1+ that builds on the same foundation.
 
-- A locked OS configuration — pinned versions, encrypted ZFS, hardened Docker, hardened PHP-FPM
-- 20 composable components, opt in to only what you need
-- 70+ AI models in 5 size tiers (tiny to XL), all on permissive licenses
-- The **`system` component** — a localhost-only API at `127.0.0.1:7780` exposing package management, VCS, migrations, and ZFS test-environment cloning, which the Safebox plugin's Code feature calls
-- Cascading manifest attestation — every component's SHA256 contributes to a single cascade hash sealed in TPM PCRs
-- Reproducible builds — anyone can rebuild from source and verify the cascade matches
+## What this repo is NOT
 
-**What we do NOT provide:**
+- **The Safebox plugin** (governance, capabilities, sandboxed code execution) lives in [its own repo](https://github.com/Safebots/Safebox). A bug there is a plugin code change, not an AMI rebuild.
+- **The Crypto plugin** (Q.Sandbox, OpenClaim signing, Merkle/Bloom data structures) lives in [its own repo](https://github.com/Safebots/Crypto).
 
-- The Safebox plugin (governance, capabilities, sandboxed code execution) — that's a Qbix PHP/Node plugin in [its own repo](https://github.com/Safebots/Safebox)
-- The Crypto plugin (Q.Sandbox, OpenClaim signing, Merkle/Bloom data structures) — that's in [its own repo](https://github.com/Safebots/Crypto)
-- The frontend (Groups app, Intercoin, etc.) — separate again
-
-This separation matters. A bug in the Safebox plugin (e.g. a governance bypass, a Protocol.HTTP misuse) doesn't require an AMI rebuild — it's a plugin code change. A bug in the Infrastructure layer (e.g. a missing telnetd removal, a Docker daemon misconfiguration) does. Keeping the boundary clear keeps both sides auditable.
-
-### Key Features
-
-- 🔐 **Hardware Attestation** — TPM 2.0 measured boot with verifiable build chain
-- 🔄 **Reproducible Builds** — Pinned packages, lockfile-verified npm, deterministic AMI hash
-- 📦 **Package Manager Pinning** — SHA256-verified npm, composer, pip, cargo, and 11 more
-- 🧪 **ZFS Test Environments** — Instant CoW clones for safe code execution
-- 📋 **Image Manifest Contract** — Typed envVars, outputFiles, exitCodes per code-runner image
-- ☁️ **Multi-Cloud Ready** — AWS (current), GCP & Azure (planned)
-- 🧩 **20 Composable Components** — Base + 19 optional modules
-- 🤖 **70+ AI Models** — Tiny (1.5B) to XL (744B parameters)
-- 🔒 **Triple Encryption** — Nitro RAM + vTPM + ZFS AES-256-GCM
-- 🎯 **Deterministic Inference** — Reproducible AI without breaking crypto
-- ✅ **GPL-Free Runtime** — 100% permissive licenses
-- 💾 **ZFS Storage** — Instant snapshots, clones, encrypted datasets
-- 🗄️ **Native MariaDB** — File-per-table with ZFS dataset isolation
-
-### Component Sizing
-
-| Component | Description | Size |
-|-----------|-------------|------|
-| **base** (required) | MariaDB, PHP-FPM, nginx, Docker, Node.js, ZFS, hardened defaults | ~8 GB |
-| **media** | FFmpeg (LGPL), pdfium, libvips, ImageMagick | ~370 MB |
-| **vision** | SigLIP, BiRefNet, SAM 2 | ~1.5 GB |
-| **embed** | BGE-M3, Nomic, Jina | ~1.5 GB |
-| **speech** | Whisper Turbo/Large, Silero VAD, Kokoro TTS | ~1.2 GB |
-| **tribe** | Brain-aligned neuroscore for context selection | ~400 MB |
-| **system** | Localhost API for Safebox Code plugin (package mgrs, VCS, migrations, test envs) | ~50 MB |
-| **llm-** tiers | Tiny (7.5 GB) to XL (850 GB) | Variable |
-
-**Total:** 15 GB (tiny config) to 850 GB (XL config) depending on selection
+Keeping the boundary clear keeps both sides auditable.
 
 ---
 
-## Quick Start
-
-### 1. Clone Repository
+## Quick Start (AWS, 1.0)
 
 ```bash
-git clone https://github.com/Safebots/Infrastructure
-cd Infrastructure/aws
+git clone https://github.com/Safebots/Infrastructure.git
+cd Infrastructure
+
+# One-time per host: create the ZFS pool
+sudo bash scripts/provision-safebox-ami.sh
+
+# Generate the TPM-attested ZFS key
+sudo bash scripts/setup-zfs-clones.sh
+
+# Build the AMI with base + system
+sudo bash aws/scripts/build-ami.sh base,system
 ```
 
-### 2. Provision the ZFS pool (one-time per host)
+The build script aborts loudly if you ask for a component that isn't installed (e.g. `base,llm-medium` will fail because `aws/scripts/components/llm-medium/` doesn't exist yet).
 
-The base installer expects `safebox-pool` to exist. Create it on a dedicated EBS volume:
-
-```bash
-zpool create -o ashift=12 -O compression=lz4 -O atime=off \
-    safebox-pool /dev/nvme1n1
-```
-
-See [docs/STORAGE-SETUP.md](docs/STORAGE-SETUP.md) for full pool-creation guidance.
-
-### 3. Generate the attested ZFS key
-
-```bash
-sudo ./scripts/generate-attested-key.sh
-# Creates /run/safebox/zfs-key sealed to TPM PCRs
-```
-
-### 4. Choose a Configuration
-
-**Development / Edge:**
-```bash
-sudo ./scripts/build-ami.sh base,llm-tiny
-# Result: 15 GB, 8 GB RAM, t3.large
-```
-
-**Production (Recommended):**
-```bash
-sudo ./scripts/build-ami.sh base,media,vision,embed,speech,tribe,llm-medium
-# Result: 110 GB, 64 GB RAM, r6i.8xlarge
-```
-
-**Code Plugin Host:**
-```bash
-sudo ./scripts/build-ami.sh base,media,system,llm-medium
-# Result: 115 GB, 64 GB RAM, r6i.8xlarge
-# Adds: package managers, VCS, migrations, ZFS test environments
-```
-
-**Research / Frontier:**
-```bash
-sudo ./scripts/build-ami.sh base,media,vision,embed,speech,tribe,system,llm-xl,cuda,vllm
-# Result: 850 GB, 256+640 GB RAM, p5.48xlarge
-```
-
-### 5. Deploy to AWS
-
-```bash
-aws ec2 run-instances \
-  --image-id ami-xxxxx \
-  --instance-type r6i.8xlarge \
-  --key-name your-key \
-  --metadata-options "HttpTokens=required,InstanceMetadataTags=enabled"
-
-# Verify TPM attestation (matches the cascade manifest)
-./scripts/verify-attestation.sh <instance-id>
-```
-
-### 6. Run Deterministic Inference
-
-```bash
-export SAFEBOX_INFERENCE_SEED="my_research_seed_12345"
-export LD_PRELOAD=/opt/safebox/lib/libsafebox_deterministic.so
-echo "Explain quantum computing" | llama-cli --model qwen-3.6-27b-q4.gguf
-# Same seed + same input = byte-identical output across runs
-```
+Detailed deployment guide: [`docs/AWS-NITRO-SETUP.md`](docs/AWS-NITRO-SETUP.md).
 
 ---
 
 ## Architecture
 
-### Composable Components
-
-Safebox uses a **modular component system**. Select only what you need:
-
-```mermaid
-graph TD
-    A[Base AMI] --> B[Media Processing]
-    A --> C[AI/ML Models]
-    A --> D[Infrastructure Add-ons]
-    A --> E[Code Plugin Host]
-
-    B --> B1[FFmpeg]
-    B --> B2[pdfium]
-    B --> B3[LibreOffice]
-
-    C --> C1[Vision]
-    C --> C2[Embeddings]
-    C --> C3[Speech]
-    C --> C4[TRIBE v2]
-    C --> C5[LLM tiers]
-
-    D --> D1[CUDA]
-    D --> D2[vLLM]
-    D --> D3[Vector DB]
-
-    E --> E1[Package Managers]
-    E --> E2[VCS]
-    E --> E3[Migrations]
-    E --> E4[ZFS Test Envs]
-```
-
-**Full component list:**
-
-| # | Component | Size | Description |
-|---|-----------|------|-------------|
-| 1 | `base` | ~8 GB | OS, MariaDB, PHP, nginx, Docker, Node.js, ZFS *(required)* |
-| 2 | `media` | ~370 MB | FFmpeg, pdfium, libvips, ImageMagick |
-| 3 | `libreoffice` | ~600 MB | Office document conversion |
-| 4 | `vision` | ~1.5 GB | SigLIP, BiRefNet, SAM 2 |
-| 5 | `vision-hq` | ~3 GB | High-quality vision models |
-| 6 | `embed` | ~1.5 GB | BGE-M3, Nomic, Jina embeddings + rerankers |
-| 7 | `speech` | ~1.2 GB | Whisper Turbo/Large v3, Silero VAD, Kokoro TTS |
-| 8 | `speech-hq` | ~2 GB | Whisper Large v3, high-quality TTS |
-| 9 | `ocr` | ~50 MB | PaddleOCR |
-| 10 | `llm-tiny` | ~7.5 GB | Gemma E2B, Qwen 4B, Phi-mini, Privacy Filter |
-| 11 | `llm-small` | ~26 GB | Qwen 8B, Mistral 12B, Phi-4, Gemma 9B |
-| 12 | `llm-medium` | ~103 GB | Qwen 27B, Gemma 4 31B/26B, Mistral 24B *(recommended)* |
-| 13 | `llm-large` | ~169 GB | Llama Scout, Qwen 72B, Llama 70B, Nemotron 49B |
-| 14 | `llm-xl` | ~420 GB | GLM-5.1, DeepSeek V3.2, Qwen 397B |
-| 15 | `cuda` | ~3 GB | NVIDIA GPU support |
-| 16 | `vllm` | ~3 GB | Batched LLM serving |
-| 17 | `diffusion-small` | ~8 GB | Stable Diffusion *(AGPL — flagged)* |
-| 18 | `index` | ~300 MB | FalkorDB vector/graph *(SSPL — flagged)* |
-| 19 | `tribe` | ~400 MB | TRIBE v2 brain-aligned neuroscore |
-| 20 | `system` | ~50 MB | Localhost API for Safebox Code plugin |
-
-### System Protocol — Interface to Safebox Plugin
-
-The `system` component exposes Infrastructure-level operations to the Safebox plugin over **localhost only**. This is the boundary between the two repos: the Safebox plugin (PHP/Node) calls these endpoints to perform privileged operations that the AMI layer owns.
-
-**Wire Protocol** (loopback `127.0.0.1:7780`):
-
-```json
-{
-    "auth":      "<256-bit token from /srv/safebox/runtimes/system/auth.token>",
-    "user":      "system" | "test",
-    "subsystem": "package" | "vcs" | "migrate" | "test" | "image",
-    "action":    "install" | "createEnv" | "...",
-    "params":    { ... }
-}
-```
-
-**Two privilege tiers:**
-
-| User | Operations | Rate Limit | Governance |
-|------|-----------|------------|------------|
-| `system` | package, vcs, migrate | 10/min burst, 100/hr sustained | Safebox plugin enforces M-of-N before calling |
-| `test` | createEnv, keepalive, destroyEnv, listEnvs | 100/min burst, 1000/hr sustained | Access-control only |
-
-System is a superset of test — `user='system'` can invoke test operations, but `user='test'` cannot invoke system operations. Attempts return 403.
-
-**Test Environment Lifecycle (Pattern A — one operation per container):**
+### Components (1.0)
 
 ```
-1. createEnv(image, testId)
-   └─> ZFS clone production dataset → /srv/encrypted/apps/{testId}/
-   └─> docker run <image> with /app/data/ writable, user=nobody, network=none
-       └─> entrypoint runs operation (cargo check, npm test, pytest, etc.)
-       └─> writes /app/data/<output>.json
-       └─> exits
-
-2. (Optional) keepalive(testId)  # Extends TTL if op > 60s
-   └─> Default TTL: 60s, max: 1hr, +60s per keepalive
-
-3. destroyEnv(testId)
-   └─> Infrastructure mounts clone read-only as root
-   └─> Reads files declared in image's manifest.outputFiles (16 MB cap)
-   └─> zfs destroy the clone
-   └─> Returns telemetry to Safebox
+aws/scripts/components/
+├── base/                # OS hardening, ZFS, Docker, PHP-FPM, package pinning
+│   ├── install-base.sh
+│   └── package.json
+├── system/             # Safebox-facing host API via Unix domain sockets
+│   ├── install-system.sh
+│   ├── server.js          # routing, audit, identity reconciliation
+│   ├── sockets.js         # per-container socket lifecycle
+│   ├── auth.js            # HMAC sign/verify, nonce LRU
+│   ├── secret.js          # Master key + per-container HKDF derivation
+│   ├── nsmClient.js       # AWS Nitro attestation client
+│   ├── cborDecode.js      # Minimal CBOR for attestation parsing
+│   ├── config.js          # managed-containers.json loader
+│   ├── opsSystem.js       # /system handler (npm/pip/cargo/gem/composer/dnf/git/migrate/zfs)
+│   ├── opsTest.js         # /test handler (ZFS clone + docker + keepalive + yields)
+│   ├── opsModels.js       # /models handler (manifest-hash-verified weights)
+│   ├── opsContainers.js   # /containers handler (lifecycle)
+│   ├── opsEmbed.js        # /embed handler (proxies to embeddings worker subprocess)
+│   ├── embeddingsWorker.js # forked subprocess; loads @huggingface/transformers, runs inference
+│   ├── package.json       # pinned npm deps (transformers, onnxruntime-node)
+│   ├── package-lock.json  # locked versions + hashes; audit reads this
+│   ├── sudoers/safebox-system          # the entire privileged surface
+│   └── units/safebox-system.service
+├── dnsclient/          # Attestation-signed IP announce + heartbeat
+│   ├── dnsclient.js       # IMDS, announce, challenge server
+│   ├── config.js          # /etc/safebox/dnsclient.json loader
+│   ├── nsmClient.js       # NSM with user_data + nonce binding
+│   ├── install-dnsclient.sh
+│   └── units/safebox-dnsclient.service
+└── autovhost/          # On-demand nginx vhost + ACME provisioning
+    ├── autovhost.js       # Unix-socket handler + ACME cascade
+    ├── config.js
+    ├── nginx-templates/safebox-autovhost.conf
+    ├── package.json       # acme-client 5.4
+    ├── install-autovhost.sh
+    └── units/safebox-autovhost.service
 ```
 
-**Resource limits (v1.0):**
-- 10 active environments per user (hard limit)
-- 50 active environments system-wide (hard limit)
-- 10 GB per environment (ZFS quota)
-- 16 MB telemetry per environment
+The base component is required. The system component depends on base. dnsclient and autovhost are independent of each other and of system at the process level — they just need `safebox-infra` to exist (which the system installer creates).
 
-Full protocol reference, manifest schema, and integration examples are in [docs/SYSTEM-PROTOCOL.md](docs/SYSTEM-PROTOCOL.md).
+### System Protocol — interface to the Safebox plugin
 
-### LLM Tiers
+The system component is the boundary between Infrastructure (the AMI layer) and the Safebox plugin (the application layer). It exposes privileged operations — package installs, version control, schema migrations, ZFS snapshots, test environments, model downloads, container lifecycle — that only the AMI is positioned to perform.
 
-#### llm-tiny (~7.5 GB)
-- Gemma 4 E2B 2.3B (Apache 2.0) — Edge, mobile
-- Qwen 3.6 4B (Apache 2.0) — Classification
-- Phi-4-mini 3.8B (MIT) — Small tasks
-- OpenAI Privacy Filter 1.5B (Apache 2.0) — PII redaction
+**Transport: per-container Unix domain sockets.** No TCP port. The system component listens on:
 
-#### llm-small (~26 GB)
-- Qwen 3.6 8B (Apache 2.0)
-- Mistral Nemo 12B (Apache 2.0)
-- Phi-4 14B (MIT)
-- Gemma 4 9B (Gemma Terms)
+- One **control socket** at `/run/safebox/control.sock` (host-only, not bind-mounted into any container). Handles host-scope operations: `dnf`, `/models/*`, `/containers/*` lifecycle.
+- One **per-container socket** per managed container at `/run/safebox/containers/<name>.sock`. Each socket is designed to be bind-mounted into exactly one Docker container. Handles per-container operations: `npm`, `pip`, `cargo`, `gem`, `composer`, `git`, `/test`.
 
-#### llm-medium (~103 GB) ⭐ **RECOMMENDED**
-- Qwen 3.6 27B (Apache 2.0) — Coding, 77.2% SWE-bench Verified
-- Gemma 4 31B Dense (Apache 2.0) — 89.2% AIME 2026
-- Gemma 4 26B MoE (Apache 2.0) — 3.8B active
-- Qwen 3.6 35B-A3B (Apache 2.0) — MoE, 3B active
-- Mistral Small 4 24B (Apache 2.0) — Multimodal
-- Qwen 3.6 32B (Apache 2.0)
+The socket a connection arrives on determines the calling container's identity. The system component verifies the HMAC against the key for THAT socket. Three layered defenses on every cross-container call:
 
-#### llm-large (~169 GB)
-- Llama 4 Scout 109B MoE (Llama Community) — 17B active, 10M context
-- Qwen 3.6 72B (Qwen License)
-- Llama 3.3 70B (Llama Community)
-- Nemotron Super 49B (NVIDIA Open)
-
-#### llm-xl (~420–860 GB)
-- GLM-5.1 744B MoE (MIT) — #1 SWE-bench Pro
-- DeepSeek V3.2 685B MoE (MIT) — 32B active
-- Qwen 3.5 397B (Apache 2.0)
-- Llama 4 Maverick 400B MoE (Llama Community)
-
-### Storage Architecture (ZFS + Docker + MariaDB)
+1. **Kernel layer** — bind-mount topology. Container foo can only reach foo's socket; the path doesn't exist in any other container's filesystem namespace.
+2. **Crypto layer** — per-container HMAC. Each container's key is HKDF-derived from the master with a per-container info string. Cryptographically independent keys.
+3. **Application layer** — identity reconciliation. If the request body claims to act on a different container than the calling socket, the system component rejects with `WRONG_SOCKET`.
 
 ```
-/ (ext4, root volume)
-├── /boot                           # ext4 (AWS boot requirement)
-├── /var/log                        # ext4 (system logs)
-└── /srv (ZFS pool: safebox-pool)   # All data on ZFS
-    │
-    ├── /srv/safebox                # Binaries, models (ZFS dataset, 20G quota)
-    │   ├── bin/, lib/, runtimes/, models/
-    │   ├── runtimes/system/        # System component
-    │   │   ├── auth.token          # 256-bit shared secret
-    │   │   └── package-versions/   # SHA256 manifests
-    │   └── manifests/              # Component manifests
-    │
-    ├── /srv/docker                 # Docker storage (ZFS dataset, 100G quota)
-    │   └── ...                     # Native ZFS storage driver
-    │
-    ├── /srv/encrypted              # Encrypted tenant data
-    │   ├── apps/                   # Per-app ZFS datasets (production)
-    │   ├── cache/                  # Tenant package caches (planned)
-    │   └── logs/                   # System component append-only logs
-    │
-    ├── /srv/mariadb                # MariaDB datadir (ZFS dataset)
-    │   ├── data/                   # System tables
-    │   ├── tenants/                # Per-tenant ZFS sub-datasets, quota+encryption
-    │   └── projects/
-    │
-    └── /srv/zfs-clones             # Ephemeral test clones (destroyed on destroyEnv)
+Safebox Node (inside container foo)             System component (host)
+────────────                                    ──────────────────────
+sign HMAC-SHA-256 over canonical                (verify HMAC against
+   <timestamp>\n<nonce>\n<method>\n               foo's per-container key)
+   <path>\n<body-sha256>                        (identity = foo, from socket)
+POST /run/safebox/system.sock                   validate schema,
+   (bind-mounted from host's                    check foo's allowedActions,
+   /run/safebox/containers/foo.sock)            execFile(sudo docker exec
+                                                  --user safebox-app
+                                                  --workdir <containerWorkdir>
+                                                  safebox-app-foo <tool> ...)
+                                                       │
+read JSON response                              ← emit audit entry to journal
+{status, data} or {status, code, message}         return response
 ```
 
-All datasets use `encryption=aes-256-gcm` with the key at `/run/safebox/zfs-key` (TPM-sealed, released only on matching PCRs).
+**Four endpoint families:**
 
-### Deterministic Inference
+- `POST /system` — synchronous tool invocation. Per-container sockets dispatch `npm/pip/cargo/gem/composer/git` into the container via `docker exec`. The control socket dispatches `dnf` directly on the host.
+- `POST /test`, `POST /test/<id>/keepalive`, `GET /test/<id>/yields`, `POST /test/<id>/stop`, `GET /test/<id>` — test environment lifecycle. Per-container sockets only.
+- `POST /embed`, `POST /embed/unload`, `GET /embed/models`, `GET /embed/health` — embeddings via `@huggingface/transformers` in a forked subprocess. Per-container sockets only. Gated by `'embed'` in `allowedActions`. Models come from `/models/install`; the worker has `allowRemoteModels = false`. See [`aws/docs/EMBEDDINGS-PROTOCOL.md`](aws/docs/EMBEDDINGS-PROTOCOL.md).
+- `POST /containers/create`, `POST /containers/destroy`, `GET /containers`, `POST /models/install`, `GET /models`, `POST /models/verify`, `POST /models/remove` — control socket only.
 
-```bash
-export SAFEBOX_INFERENCE_SEED="seed_string"
-export LD_PRELOAD=/opt/safebox/lib/libsafebox_deterministic.so
+**Two allowlists, two governance speeds:**
 
-# AI-only RNG via LD_PRELOAD. Crypto operations still use /dev/urandom.
-# Only inference RNG paths are deterministic.
-```
+| Layer | What it controls | Editable by |
+|---|---|---|
+| `managed-containers.json` | Per-container ACL: which `tool` actions each declared `managedContainer` may invoke. The system component returns `FORBIDDEN_ACTION` for anything not in `allowedActions`. | The system component itself, via `/containers/create` and `/containers/destroy`. SIGHUP reload — no restart. |
+| `/etc/sudoers.d/safebox-system` | The entire root-elevation surface. Declares exact argv shapes that `sudo` will accept. | Code review only — changes through a PR. |
 
-See [docs/DETERMINISTIC-AI-ONLY-RNG.md](docs/DETERMINISTIC-AI-ONLY-RNG.md).
+**Authentication:** HMAC-SHA-256. The master key is derived from a verified AWS Nitro attestation document via HKDF-SHA-256 over PCRs 0, 1, 4 — same AMI on same host → same master, different host → different master. Per-container keys are HKDF-derived from the master with `info = "safebox-container-<name>-v1"`, so each container's key is cryptographically independent.
+
+**Privileged surface:** the system component runs as unprivileged `safebox-infra`. Operations that need elevation (`dnf`, `zfs`, `docker`) go through `sudo` against the tight allowlist. That sudoers file is the entire privileged surface — an auditor reads it and the system component's Node source and knows exactly what is possible. Read it: [`aws/scripts/components/system/sudoers/safebox-system`](aws/scripts/components/system/sudoers/safebox-system).
+
+**Audit:** structured JSON via `journalctl -t safebox-system`. Each request emits one entry with the calling socket identity, method, path, status, duration, and request metadata.
+
+Full protocol reference for Safebox integrators: [`aws/docs/Safebox.md`](aws/docs/Safebox.md) and [`aws/docs/SYSTEM-PROTOCOL.md`](aws/docs/SYSTEM-PROTOCOL.md).
+
+### Storage architecture
+
+ZFS is the storage layer for everything mutable: app data, container clones, MariaDB datadirs, test environments. Each tenant gets a dataset; tests get clones; backup is `zfs send`. Encryption is AES-256-GCM with the key sealed to TPM PCRs and only available after attested boot.
+
+See [`aws/docs/ZFS-COMPLETE-GUIDE.md`](aws/docs/ZFS-COMPLETE-GUIDE.md) for the full storage model, [`aws/docs/MARIADB-SCALING-ANALYSIS.md`](aws/docs/MARIADB-SCALING-ANALYSIS.md) for how MariaDB sits on top of it, [`aws/docs/XTRABACKUP-PRIMARY.md`](aws/docs/XTRABACKUP-PRIMARY.md) for the backup story.
 
 ---
 
-## Features
+## Onboarding paths
 
-### Package Manager Version Pinning
+The same AMI + components support three deployment paths. Customers pick the one that matches how much of the stack they want us to manage.
 
-**The threat**: Supply chain attacks compromise legitimate package managers, then attack downstream. The May 2025 TanStack/"Mini Shai-Hulud" campaign compromised 42 official npm packages, spreading to OpenSearch, Mistral AI, Guardrails AI, UiPath, and Squawk packages. The malware hooked into developer-environment configs (.claude/settings.json, .vscode/tasks.json) via lifecycle scripts.
+### Path A — Cloud-managed (CloudFormation one-click)
 
-**Two defenses at the Infrastructure layer:**
+The polished path on AWS. Customer clicks a button on the Safebots dashboard, AWS prompts for region + a stack name, CloudFormation provisions an EC2 instance running our published AMI in their AWS account. The dnsclient component (see [`aws/scripts/components/dnsclient/`](aws/scripts/components/dnsclient/)) phones home on first boot with an attested announce, the central DNS API issues a record at `<safeboxId>.safebots.org` pointing at the new instance, and the customer is at their dashboard within ~3 minutes of clicking.
 
-1. **Pinned binaries with SHA256 verification.** Every package manager binary — npm, composer, pip, cargo, etc. — is verified against a checked-in SHA256 manifest before execution. A compromised binary doesn't match its hash; execution is refused.
+- **Trust anchor**: full Nitro attestation. The dnsclient binds (safeboxId, reportedIp, challenge, timestamp) into the NSM-signed COSE_Sign1 document. Central DNS API verifies the signature chain against the pinned AWS Nitro root cert before updating DNS.
+- **Custom domains**: handled by the autovhost component ([`aws/scripts/components/autovhost/`](aws/scripts/components/autovhost/)). Customer points a CNAME at their box's hostname; on first hit, autovhost runs DNS sanity check → ACME HTTP-01 against Let's Encrypt → nginx vhost install → reload. Browser-trusted cert, end-to-end TLS, no third-party in the cleartext path.
+- **Credit eligibility**: standard Marketplace listing; works with AWS Activate credits.
 
-2. **`npm ci --ignore-scripts` for the base npm install.** The base installer never runs `npm install <packages>` (which would fetch latest versions). Instead it runs `npm ci` against a checked-in `package-lock.json` with integrity hashes for every tarball, and `--ignore-scripts` blocks lifecycle scripts (the TanStack attack vector).
+### Path B — Paste-IP (bring your own VM)
 
-**Supported package managers (all pinned):**
+For customers who already have a Linux VM on any cloud (or bare metal). They run our bootstrap script with a registration token:
 
-| Language | Managers |
-|----------|----------|
-| JavaScript | npm, yarn, pnpm |
-| PHP | composer |
-| Python | pip, pipenv, poetry |
-| Ruby | gem, bundle |
-| Rust | cargo |
-| Go | go (toolchain) |
-| Java | mvn, gradle |
-| System | dnf, apt, apk |
-
-If a binary's SHA256 doesn't match the pinned manifest, the installer refuses to execute it. See [docs/PACKAGE-MANAGER-PINNING.md](docs/PACKAGE-MANAGER-PINNING.md).
-
-### ZFS Test Environment Cloning
-
-Production app data on `/srv/encrypted/apps/{appName}/mysql/` is cloned via ZFS CoW. Tests can INSERT/UPDATE/DELETE in isolation. `zfs destroy` removes all changes instantly.
-
-```
-createEnv → ZFS clone production
-         → docker run <image>
-            → entrypoint runs operation
-            → writes /app/data/<output>.json
-            → exits
-         → Safebox calls destroyEnv
-         → Infrastructure reads manifest.outputFiles
-         → zfs destroy clone
-         → return telemetry
+```bash
+curl -L https://safebots.org/bootstrap > /tmp/b.sh
+less /tmp/b.sh                       # read first
+sudo bash /tmp/b.sh reg_xxxxxxxxxxxxxxxx
 ```
 
-**Container isolation:**
-- Run as `nobody` (UID 5000+)
-- `network=none` only
-- Can only write to `/app/data/`
-- Output limited to files declared in image manifest
+The script ([`aws/scripts/bootstrap-safebox.sh`](aws/scripts/bootstrap-safebox.sh)) detects the distro, installs Node.js / nginx / openssl / jq, downloads the Infrastructure tarball, runs `install-system.sh` + `install-dnsclient.sh` + `install-autovhost.sh` in order, registers the box with the control plane (POSTing the registration token + detected public IP), receives a `safeboxId` + `accountToken`, writes them to `/etc/safebox/dnsclient.json`, and starts the systemd units. Total time on a fresh Ubuntu/Debian/RHEL VM: ~2 minutes.
 
-See [docs/ZFS-TEST-ENVIRONMENTS.md](docs/ZFS-TEST-ENVIRONMENTS.md).
+- **Trust anchor**: weaker than Path A. Without Nitro, the dnsclient runs in unattested mode (`allowUnattested: true` in dnsclient.json). The DNS API trusts the registration token and the announce-then-challenge handshake but cannot prove the OS image hasn't been modified. Suitable for customers whose threat model accepts this — most do.
+- **Custom domains**: same autovhost flow as Path A.
+- **No credit story**: the customer is paying for their own VM out of pocket. Activate credits don't apply because the workload doesn't run on an AWS Marketplace AMI.
 
-### Image Manifest Contract
+### Path C — BYO DNS + autovhost only
 
-Every code-runner image declares its contract at `/app/manifest.json`:
+For customers who already have a Safebox running (via Path A or B) and just want to attach more custom domains. No installer needed — the autovhost component is already running. The customer points a CNAME or A record at the box's IP, and on the first request to that hostname, autovhost provisions a cert and vhost automatically. No dashboard click required.
 
-```json
-{
-    "name":       "code-runner:rust-1.85-build",
-    "operation":  "build",
-    "language":   "rust",
-    "version":    "1.85",
-    "entrypoint": "/app/run-build.sh",
-    "envVars": {
-        "CARGO_PROFILE": {
-            "required": false,
-            "default":  "dev",
-            "values":   ["dev", "release"],
-            "doc":      "Cargo build profile"
-        }
-    },
-    "outputFiles": [
-        {
-            "path":     "/app/data/build-output.json",
-            "format":   "cargo-message-format-json",
-            "required": true
-        }
-    ],
-    "exitCodes": {
-        "0":   "build succeeded",
-        "1":   "build failed",
-        "101": "cargo internal error",
-        "124": "timeout"
-    },
-    "resourceHints": {
-        "memoryMb":    2048,
-        "cpus":        2,
-        "timeoutMs":   180000,
-        "diskWriteMb": 500
-    }
-}
-```
+This is also the path for customers who want to embed Safebox via iframe under their own domain: they point `id.customer.com` and `chat.customer.com` at our box; we issue and serve real Let's Encrypt certs for both; the iframe loads with proper origin isolation and ITP-resistant session handling.
 
-Manifest is inside the image. Tampering changes the image hash → signature mismatch → image refused.
+### Cross-cloud onboarding comparison
+
+| Cloud | Path A polish | Path B (paste-IP) | Notes |
+|---|---|---|---|
+| **AWS** | Yes — CloudFormation one-click via Marketplace AMI | Yes | Path A only on AWS. Full attestation via Nitro NSM. |
+| **Azure** | Comparable (ARM "Deploy to Azure" button) | Yes | ARM template is straightforward to author; full attestation via SEV-SNP/MAA is 1.1+ work. |
+| **GCP** | Less polished — paste API key model | Yes | GCP Marketplace has analogous one-click but UX is rougher. Confidential VM (SEV-SNP) attestation is 1.1+ work. |
+| **Oracle Cloud (OCI)** | Less polished | Yes | OCI Marketplace exists; Shielded Instances attestation is 1.1+ work. |
+| **IBM Cloud / DigitalOcean / Hetzner / bare metal** | n/a | Yes | Path B works on any Linux VM with public IP. |
+
+For 1.0 we ship Path A polished on AWS only. Paths B and C work everywhere from day one because they don't depend on cloud-specific Marketplace integration.
+
+### SafeCloud failover (future)
+
+A planned future component is the SafeCloud redundancy network: a peer-to-peer overlay where each running Safebox commits a fraction of its storage and compute to replicate other boxes in the network. When a box fails (instance terminated, hardware lost, network partition longer than threshold), the DNS API rolls its hostname to a peer that holds an up-to-date snapshot, and customer traffic continues against the failover peer without manual intervention.
+
+This is service-for-payment: peers that provide actual storage/compute replication work get paid out of a redundancy pool funded by a fraction of network revenue. Mechanism and economics are specified in [`docs/future/SAFECLOUD-PROTOCOL.md`](docs/future/SAFECLOUD-PROTOCOL.md) (design doc, no implementation yet).
+
+The dnsclient + autovhost components in 1.0 are the foundation: dnsclient is what lets a peer take over a hostname after failover, and autovhost is what lets the new peer serve customer-facing TLS for that hostname without manual cert provisioning. SafeCloud itself (snapshot replication, peer discovery, failover detection, redundancy accounting) is post-1.0.
 
 ---
 
-## Build System
+## Multi-cloud
 
-```bash
-./scripts/build-ami.sh <component-list>
+The same architecture works on GCP, Azure, and Oracle Cloud — all four have TPM-based attestation suitable for binding the system component HMAC to (image, kernel, host) measurements. What differs is the attestation client, not the rest of the system component.
 
-# Examples:
-./scripts/build-ami.sh base,llm-tiny                          # Minimal
-./scripts/build-ami.sh base,media,vision,embed,llm-medium     # Production
-./scripts/build-ami.sh base,system,llm-medium                 # Code plugin host
-./scripts/build-ami.sh base,media,vision,embed,speech,tribe,system,llm-xl,cuda,vllm  # Frontier
-```
+| Cloud | Attestation mechanism | What replaces `nsmClient.js` |
+|---|---|---|
+| **AWS** (shipped in 1.0) | Nitro Secure Module + AWS Nitro PKI | Existing `nsmClient.js` — execs `/usr/bin/nsm-cli`, verifies COSE_Sign1 against pinned AWS root cert |
+| **GCP** | Shielded VM vTPM + AMD SEV-SNP or Intel TDX | New `gce-attestation-client.js` — uses `tpm2_quote` from `tpm2-tools` plus the Google Confidential Computing attestation API or direct AMD VCEK verification |
+| **Azure** | vTPM + AMD SEV-SNP, with Microsoft Azure Attestation (MAA) service | New `azure-attestation-client.js` — reads SNP report from vTPM NVRAM at index `0x01400001`, verifies via MAA or direct AMD VCEK chain |
+| **Oracle Cloud (OCI)** | Shielded Instances + Measured Boot + AMD SEV (E3/E4 shapes) | New `oci-attestation-client.js` — uses `tpm2_quote` for PCRs, verifies against OCI-published platform certs |
 
-Each component installer is at `scripts/components/<name>/install-<name>.sh`. Components are independent; ordering is automatic.
+In every case the system component protocol stays identical (HMAC over canonical envelope, `managed-containers.json` allowlist, `/system` and `/test` endpoints). The PCR set we bind to may differ by cloud — AWS uses PCRs 0/1/4 because Nitro defines them that way; GCP/Azure/Oracle would use the TCG-standard PCR0 (firmware) + PCR7 (secure boot policy) + an instance-binding PCR. The `attestationDerive` HKDF function is unchanged.
 
-Every build runs:
-1. Pre-flight check (required components present, ZFS pool exists, key file present)
-2. Component install in declared order
-3. Manifest generation per component
-4. Cascade SHA256 over all manifests
-5. TPM attestation seal
-6. Package manager binary checksum verification
+**Effort estimate to add a new cloud:**
+
+- **Per-cloud attestation client**: ~300-500 lines of Node. One file, parallel to `nsmClient.js`. Verifies that cloud's signed attestation evidence and extracts PCRs. Same shape: returns `{ pcrs: Map<int, Buffer> }`.
+- **Per-cloud base installer**: ~400 lines, structurally similar to `aws/scripts/components/base/install-base.sh` but with cloud-specific package names, instance-metadata calls, and TPM device paths.
+- **Per-cloud provisioning script**: ~200-400 lines, equivalent to `scripts/provision-safebox-ami.sh`.
+
+Roughly 3-5 days of focused engineering per cloud, plus 1-2 days of testing on actual hardware in that cloud. The crypto layer (`attestationDerive`, the system component itself) doesn't change.
+
+Prioritization is open. GCP probably first because Confidential VM is mature; Azure second because of strong customer demand for the MAA story; OCI third because its attestation service is weaker and the threat model needs more careful work.
 
 ---
 
 ## Security
 
-> **Pre-release honesty**: Safebox 1.0 is a pre-release. The defenses below are real and meaningful — zero interactive shell access alone puts an attested Safebox instance ahead of probably 95% of cloud deployments. But the Safebox stack has not yet undergone third-party security audit, is not yet running on Confidential Computing instance types by default, and has not yet been pen-tested. We do not claim "truly secure" — we claim "production-grade, third-party audit in progress."
-
-The base installer (`install-base.sh`) hardens the AMI at the Linux/AMI layer. The Safebox plugin layer has its own security model on top (governance, sandboxing, capability isolation) documented in the [Safebox repo](https://github.com/Safebots/Safebox).
-
 ### Threat model
 
-Safebox is designed to defend against a specific set of threats. Knowing what's in scope and what's out of scope matters more than any individual hardening measure.
+The Infrastructure layer defends against:
 
-**In scope — Safebox defends against these:**
+- **Disk-copy attacks.** AMI snapshot exfiltrated to a different host produces a different HMAC key (PCR4 binds to the parent EC2 instance ID), so the copied AMI cannot speak to a Safebox plugin signed against the original.
+- **Tampered AMI.** Any modification to the OS image, kernel, or bootloader changes PCR0/PCR1, which changes the derived HMAC key, which breaks all signed requests. Tampering is detected on first request.
+- **Unprivileged-RCE in the Safebox plugin.** A bug in the plugin can't escalate beyond what the system component's sudoers file allows. SQL injection in PHP can't forge a system component request because the HMAC key lives in the Node process's memory, not in PHP's.
+- **Test environment escape.** Test containers run as `nobody`, network=none, read-only rootfs, no caps, in an isolated ZFS clone that's destroyed on teardown or after 60s of silence.
+- **Cross-tenant `dnf upgrade`.** A compromised app-tenant cannot trigger a system-wide package update affecting other tenants. The `_host` scope check rejects `dnf` from any non-`_host` managedContainer.
 
-| Threat | Defense |
-|--------|---------|
-| Stolen SSH keys reaching the instance | SSH removed entirely from production AMIs |
-| Stolen AWS IAM credentials used to start an interactive session | `amazon-ssm-agent` removed; `aws ssm start-session` cannot reach the instance |
-| Stolen package registry credentials pushing malicious updates | `npm ci --ignore-scripts` with SHA-512 integrity verification from a locked manifest |
-| Compromised package binary (e.g., trojan-horse npm package manager) | Package manager binaries verified against SHA256 manifest before execution |
-| Modified boot artifacts (kernel, initrd, rootfs) | TPM-sealed ZFS keys released only on matching PCR values |
-| Container escape into host privilege | Docker `userns-remap=default`, `no-new-privileges=true`, `icc=false` |
-| SQL injection or web-shell uploads escalating to subprocess execution | PHP `disable_functions` blocks `exec`, `shell_exec`, `system`, etc. at the language level |
-| Memory exfiltration via remote network shell | No remote shell mechanism exists to exfiltrate from |
-| Server-side request forgery into cloud metadata or private networks | Safebox plugin Protocol.HTTP SSRF protection (16+ encoded-IP forms blocked, DNS rebinding blocked) |
-| Cross-organization data writes via the action queue | Cross-org check on `payload.publisherId`, `toPublisherId`, `fromPublisherId` at every write site |
-| Tampering with running instance going undetected | Auditd rules on ZFS key access, package manager invocations, config writes, setuid escalation; append-only audit logs cryptographically chained |
-| Side-loaded code modifying production data | Test environments isolated via ZFS clones; production datasets never mutated by test runs |
-| Test-environment exfiltration via undeclared output paths | Manifest-declared `outputFiles` are the only data returned from test containers; everything else discarded with the ZFS clone |
+The Infrastructure layer does NOT defend against:
 
-**Out of scope — Safebox does NOT defend against these (at least not yet):**
-
-| Threat | Why it's out of scope |
-|--------|----------------------|
-| The cloud provider reading your RAM | Standard EC2 trusts AWS at the hypervisor level. Confidential Computing instance types (AMD SEV-SNP, Intel TDX) defend against this; Safebox 1.0 does not require them. Planned for post-1.0. |
-| Side-channel attacks (Spectre, Rowhammer, AES-NI timing) | Mitigations exist at the OS/microcode level (we apply them) but new variants emerge; no system can claim immunity. |
-| AI model weight poisoning at the source | We checksum the model tarballs, but the checksums come from the same source as the models. Independent signature verification is a post-1.0 item. |
-| vTPM rollback attacks | AWS vTPM is software-emulated; the guarantee is only as strong as Amazon's implementation. We do not currently defend against published vTPM rollback techniques. |
-| Time-of-check vs time-of-use kernel vulnerabilities | Attestation happens at boot. A kernel CVE discovered after boot doesn't trigger re-attestation. Mitigation is short-lived instances (rotate every N hours), which is operationally costly. |
-| Insider attacks by AWS personnel | Outside our threat model. If you cannot trust AWS, you cannot run on AWS — that's a fundamental property of any cloud deployment. |
-| Physical attacks on AWS data centers | Outside our threat model. AWS physical security is what it is. |
-| Forensic-environment compromise | When a terminated instance is snapshotted for offline analysis, the forensic environment needs the ZFS key. That environment's security is a separate problem we don't yet solve cleanly. |
-| Zero-days in the Safebox plugin itself | We've fixed 130 documented bugs during pre-release development. We've found 4 more in the most recent audit pass. There are almost certainly more. Bug bounty planned post-1.0. |
-| Compromised LLM provider returning malicious tool code | The Safebox plugin's capability sandbox is the line of defense here, not the AMI. Sandbox bugs (we've found 17 historically) reduce its effectiveness. |
-
-If any "out of scope" item is critical for your use case, Safebox 1.0 is not the right fit for that use case yet. Talk to us about your requirements before deploying.
+- **Compromised Safebox Node process.** If the plugin's Node side is rooted, it has the HMAC key and the system component will execute what it asks. M-of-N governance lives inside Safebox, before the call. Per-request governance signatures (Ed25519) are the documented upgrade path for 1.1.
+- **Compromised AWS hypervisor.** Out of scope. We trust Nitro.
+- **Insider with the AWS account.** AWS-side controls (SCPs, separate accounts, KMS policies) are the answer here, not Infrastructure.
 
 ### What's defended
 
-#### Hardware & boot
-- Deterministic AI inference without breaking cryptographic randomness
-- Per-dataset ZFS encryption (AES-256-GCM)
-- TPM-sealed keys, released only on matching PCR values
-- vTPM 2.0 measured boot
-- Nitro Enclave hardware RAM encryption (AWS, optional)
+**Hardware & boot**
+- TPM 2.0 measured boot; PCRs 0, 1, 4 bind the system component HMAC to the (image, kernel, host) tuple
+- AWS Nitro attestation document signed by AWS root CA (fingerprint pinned: `641a0321...0bb5b`)
+- AWS root cert verified at every cold start AND at install time
 
-#### Zero interactive shell access
-The attested Safebox model rests on the guarantee that the running code is exactly the code that booted. Any interactive shell — SSH, AWS SSM Session Manager, EC2 Serial Console login — defeats that guarantee, because once a human has a shell they can read the ZFS key from `/run/`, `kexec` a new kernel, or modify a running binary in memory. The base installer therefore removes `openssh-server`, `amazon-ssm-agent`, and all TTY/serial-console getty units.
+**Zero interactive shell access on the production AMI**
+- SSH removed from AMI-B (see "The Two-AMI Model" in [`aws/docs/AUDIT.md`](aws/docs/AUDIT.md))
+- SSM agent removed
+- All TTY logins disabled
+- telnetd / RSH / VNC / FTP / TFTP / Cockpit removed (CVE-2026-32746 mitigated)
 
-What you keep: outbound HTTPS for AWS API access via IAM-role instance metadata (S3, KMS, CloudWatch, etc.), normal application traffic on configured ports. What you lose: any way to log into the box. Diagnostics happen against an offline ZFS snapshot of a terminated instance, not on a live shell. See [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the full policy and operational implications.
+**Runtime isolation**
+- Docker userns-remap enabled
+- PHP `expose_php=Off`, dangerous functions disabled
+- Hardened sysctls (kptr_restrict, dmesg_restrict, ptrace_scope, BPF restrictions, ICMP redirect drops)
+- ZFS encryption (AES-256-GCM) with keys sealed to TPM PCRs
 
-#### Runtime isolation
-- Docker daemon with `userns-remap=default` — containers run as host UID 100000+
-- Docker `no-new-privileges=true`, `icc=false`
-- PHP-FPM with `expose_php=Off`, dangerous functions disabled (`exec`, `shell_exec`, `system`, `proc_open`, `popen`, etc.)
-- nginx with hardened defaults (configured per-component)
-- systemd-based resource isolation with cgroups
-- chroot filesystem isolation per tenant
-- auditd rules for ZFS key access, package manager invocations, config file writes, setuid escalation attempts
+**Supply chain**
+- All system packages version-pinned in `aws/manifests/safebox-packages.json`
+- npm packages installed from a lockfile
+- The system component has zero npm dependencies (Node 22 stdlib covers x509, ECDSA verify, CBOR is hand-rolled)
+- AWS root cert pinned by SHA-256 at compile time and verified at install time
 
-#### Supply chain
-- All system packages pinned to specific versions with post-install verification
-- All base npm packages installed via `npm ci --ignore-scripts` from lockfile with SHA-512 integrity hashes
-- Image manifest signing — manifest hash is part of image hash
-- CVE-2026-32746 mitigation — telnetd explicitly removed, verified at end of install
-- Reproducible builds — same input produces same cascade SHA256
-
-#### Test environment isolation (system component)
-- Test containers run as `nobody` (UID 5000+)
-- Cannot access production secrets
-- `network=none` only (namespace registry planned post-1.0)
-- Can only write to `/app/data/`
-- Output limited to files declared in image manifest (16 MB cap)
+**System component**
+- HMAC-SHA-256 with 5-minute clock skew window, 10-minute nonce LRU
+- Per-request `managedContainer` + `tool` authorization via `managed-containers.json`
+- All execFile invocations use array argv with `--` separators; no shell interpretation anywhere
+- Workspace prefix enforcement via `realpathSync` (leading-dash package names rejected, `/etc` workspace escapes rejected)
+- Per-tool timeouts with SIGKILL on overrun
+- `_host` scope check enforces system-wide actions can only come from the host channel
 
 ### What's pending before we'd claim "audited"
 
-These are the items between current state and a defensible "third-party audited" claim. They're tracked on the post-1.0 roadmap; none of them are blockers for developer preview.
-
-- **Third-party security audit.** [docs/AUDIT.md](aws/docs/AUDIT.md) is the comprehensive checklist auditors should work through — 278 specific checks across six phases (trust root, base component, system component, cross-component verification, two-AMI diff verification, out-of-band review). The audit happens on AMI-A (with SSH for auditor access); after sign-off, AMI-B is built from the same source with `--remove-ssh` and is byte-identical to AMI-A except for the documented removals. Clients pin to AMI-B's cascade hash.
-- **Confidential Computing instance types.** Move the attested production profile from regular EC2 to AMD SEV-SNP or Intel TDX so AWS hypervisor cannot read guest RAM.
-- **Independent reproducible-build verification.** Right now we ship the cascade SHA256 and trust ourselves. The right model is for someone else to build from source and verify they get the same hash. Planning a public attestation registry for this.
-- **External penetration test.** Different from code audit — tests a deployed instance against runtime, network, and AWS configuration attacks.
-- **Audit of all 20 component installers.** I audited `install-base.sh`. The other 19 component installers haven't been reviewed at the same depth yet.
-- **Deeper Safebox plugin audit.** Q.Sandbox, Crypto, and the credential-derivation pipeline need their own focused passes.
-- **Bug bounty program.** Once public, paying attackers to find what we missed is the most cost-effective security investment available.
-
-### Audit history (Infrastructure layer)
-
-This pre-release audit pass identified 10 Linux/AMI-level issues in `install-base.sh` — missing directory creation, ZFS encryption misconfiguration, unpinned npm installs, missing remote-shell removal (telnet, SSH, SSM agent, console getty), Docker daemon defaults, PHP-FPM exposure, and others. All are fixed in the current `install-base.sh` with eight verification gates that abort the build if any of them survive. See [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) and [CHANGELOG.md](CHANGELOG.md) for details.
+- External code audit of the system component and `install-base.sh` by a third-party review house
+- Real-NSM smoke run on an actual AWS Nitro host (the synthetic test suite exercises every code path, but production behavior of `nsm-cli` hasn't been verified against real hardware yet)
+- Reproducible build verification (two independent builds from the same git commit producing byte-identical AMIs)
 
 ### Reporting vulnerabilities
 
-Pre-release security issues: greg@qbix.com. Once we launch a public bug bounty, that channel will be the preferred route — but for now, direct email is the right path.
-
----
-
-## License Compliance
-
-100% permissive licenses in the runtime path. AGPL and SSPL components (diffusion-small, index) are excluded by default and clearly flagged when opted in.
-
-**Runtime licenses:**
-- Apache 2.0 — MariaDB, PHP, Node.js, ZFS-on-Linux, BGE-M3, Qwen 3.6, Gemma 4
-- MIT — Phi-4, GLM-5.1, DeepSeek V3.2
-- LGPL — FFmpeg (dynamically linked, runtime-only)
-- BSD — nginx, Docker engine
+Email security@safebots.ai. PGP key on the website.
 
 ---
 
 ## Documentation
 
-### Core
-- [README.md](README.md) — This file
-- [CHANGELOG.md](CHANGELOG.md) — Pre-release development log
-- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution guide
-- [docs/QUICKSTART.md](docs/QUICKSTART.md) — Getting started
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System architecture
+**For auditors:**
+- [`aws/docs/AUDIT.md`](aws/docs/AUDIT.md) — the actual audit checklist, 6 phases
+- [`aws/docs/ARCHITECTURE.md`](aws/docs/ARCHITECTURE.md) — full system architecture
+- [`aws/docs/SECURITY-HARDENING.md`](aws/docs/SECURITY-HARDENING.md) — hardening details
+- [`aws/docs/CASCADING-MANIFESTS.md`](aws/docs/CASCADING-MANIFESTS.md) — the SHA256 attestation chain
 
-### Security
-- [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) — Base AMI hardening details
-- [docs/AUDIT.md](docs/AUDIT.md) — Pre-deployment audit checklist (278 checks across 6 phases for third-party auditors)
-- [docs/AMI-SECURITY-SUMMARY.md](docs/AMI-SECURITY-SUMMARY.md) — Higher-level overview
-- [docs/CASCADING-MANIFESTS.md](docs/CASCADING-MANIFESTS.md) — Attestation cascade
+**For integrators (Safebox plugin team):**
+- [`aws/docs/SYSTEM-PROTOCOL.md`](aws/docs/SYSTEM-PROTOCOL.md) — wire spec for the HTTP API
+- [`aws/docs/QUICKSTART.md`](aws/docs/QUICKSTART.md) — fastest path to a running AMI
 
-### Components
-- [docs/PACKAGE-MANAGER-PINNING.md](docs/PACKAGE-MANAGER-PINNING.md) — Pinning system
-- [docs/ZFS-TEST-ENVIRONMENTS.md](docs/ZFS-TEST-ENVIRONMENTS.md) — Test environment cloning
-- [docs/SYSTEM-PROTOCOL.md](docs/SYSTEM-PROTOCOL.md) — Localhost API reference (the boundary to the Safebox plugin)
-- [docs/STORAGE-SETUP.md](docs/STORAGE-SETUP.md) — ZFS pool provisioning
+**For operators:**
+- [`docs/AWS-NITRO-SETUP.md`](docs/AWS-NITRO-SETUP.md) — provisioning guide
+- [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) — how Safebox governance maps to system calls
+- [`aws/docs/BACKUP-STRATEGY.md`](aws/docs/BACKUP-STRATEGY.md) — backup architecture
+- [`aws/docs/ZFS-COMPLETE-GUIDE.md`](aws/docs/ZFS-COMPLETE-GUIDE.md) — ZFS storage model
+- [`aws/docs/MARIADB-SCALING-ANALYSIS.md`](aws/docs/MARIADB-SCALING-ANALYSIS.md), [`aws/docs/XTRABACKUP-PRIMARY.md`](aws/docs/XTRABACKUP-PRIMARY.md) — database
 
-### Models
-- [docs/SAFEBOX-COMPLETE-SUMMARY.md](docs/SAFEBOX-COMPLETE-SUMMARY.md)
-- [docs/SAFEBOX-FINAL-APRIL-2026.md](docs/SAFEBOX-FINAL-APRIL-2026.md) — April 2026 model lineup
-- [docs/AI-ML-STACK-COMPLETE.md](docs/AI-ML-STACK-COMPLETE.md)
-- [docs/DETERMINISTIC-AI-ONLY-RNG.md](docs/DETERMINISTIC-AI-ONLY-RNG.md)
+**For AI/model integration (post-1.0):**
+- [`docs/MODEL-CATALOG.md`](docs/MODEL-CATALOG.md) — ~70 open-source models across tiny/small/medium/large/XL tiers with sizes and licenses
+- [`docs/MODEL-RUNNER-API-SPEC.md`](docs/MODEL-RUNNER-API-SPEC.md) — wire spec for the inference protocol
+- [`docs/MODEL-INTEGRATION-GUIDE.md`](docs/MODEL-INTEGRATION-GUIDE.md) — how Safebox calls into model runners
+- [`model-runners/privacy-filter/`](model-runners/privacy-filter/) — working PII redaction runner (Python + Dockerfile)
+
+**Specifically NOT canonical yet (designs for 1.1+):**
+- Everything under [`docs/future/`](docs/future/) — speech, vision, vLLM specifics, composable-architecture, etc.
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests welcome on:
-- New component installers
-- Model integrations
-- Cloud provider implementations (GCP, Azure)
-- Documentation improvements
-- Security audit follow-ups
-
----
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Roadmap
 
-### Pre-release polish (current)
-- Continue Linux/AMI security audit
-- GCP and Azure parity with AWS
-- Documentation expansion
-- Load testing with multi-tenant workloads
+**1.1+:**
+- LLM tier components (`llm-tiny`, `llm-small`, `llm-medium`, `llm-large`, `llm-xl`) — installers for the ~70-model catalog
+- Speech and vision tiers (ASR, TTS, multimodal)
+- GCP, Azure, and Oracle Cloud builds — per-cloud attestation clients (~3-5 days of work each)
+- Per-request Ed25519 governance signatures (1.1 protocol upgrade)
+- Runtime HMAC rotation without service downtime
 
-### Post-1.0 features
+## License
 
-**Phase A (Infrastructure additions):**
-- Cache mounts for test environments (per-workspace, tenant-language-version)
-- Network namespaces with M-of-N-signed registry — for integration tests against staging
-- Multi-arch images (ARM64)
-- Operator-configurable per-tenant resource caps
-- HMAC + timestamp on the wire protocol (for remote executors, not just localhost)
-
-**Phase B (model and platform expansion):**
-- Llama 4 Scout integration (10M context)
-- Real-time streaming inference
-- Multi-modal unified embeddings
-- Cross-lingual video search
-- Edge optimization (Q3_K_M quantization)
-- Kubernetes deployment support
-- Network mode `bridge` (advanced)
-
----
-
-## Support
-
-- **Documentation**: [docs/](docs/)
-- **Issues**: GitHub Issues
-- **Discussion**: https://community.safebots.ai
-- **Pre-release support**: greg@qbix.com
-- **Safebox plugin repo**: https://github.com/Safebots/Safebox (separate codebase)
+Apache 2.0. See [LICENSE](LICENSE).

@@ -290,7 +290,7 @@ After `install-base.sh` runs, the only network access to the instance is:
 - No telnet (port 23 closed, package removed)
 - No RDP, VNC, FTP, TFTP
 - No SSM Session Manager
-- The `system` component (when installed) listens on `127.0.0.1:7780` — **loopback only**, never bound to a public interface
+- The `system` component (when installed) does NOT listen on any network port. It is a Node.js daemon (`safebox-system.service`) running as the unprivileged `safebox-infra` user; it accepts HMAC-signed JSON over **Unix domain sockets only** — one per managed container at `/run/safebox/containers/<name>.sock` plus one control socket at `/run/safebox/control.sock`. No TCP listener and no exposure outside the host.
 - Application traffic — nginx on 443 with TLS, when configured by the application component (not the base)
 
 **Outbound (limited by VPC/security-group)**:

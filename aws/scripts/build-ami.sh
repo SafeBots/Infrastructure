@@ -1,20 +1,28 @@
 #!/bin/bash
 #
-# Safebox AMI Builder - Master Build Script
+# Safebox AMI Builder
+#
 # Usage: ./build-ami.sh <component-list>
 #
-# Examples:
-#   ./build-ami.sh base,llm-tiny
-#   ./build-ami.sh base,media,vision,embed,llm-medium
-#   ./build-ami.sh base,media,vision,embed,speech,llm-xl,cuda,vllm
+# For 1.0, the only supported components are 'base' and 'system':
 #
+#   ./build-ami.sh base,system
+#
+# Future tiers (llm-tiny, vision, speech, vllm, etc.) are tracked in
+# docs/future/ but not buildable yet — their component dirs are not present.
+# Build will fail with an explicit error if you ask for one.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPONENTS_DIR="${SCRIPT_DIR}/components"
 
-# Parse components
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <component-list>"
+    echo "  e.g.: $0 base,system"
+    exit 1
+fi
+
 IFS=',' read -ra COMPONENTS <<< "$1"
 
 echo "Building Safebox AMI with components: ${COMPONENTS[*]}"
@@ -25,17 +33,22 @@ if [[ ! " ${COMPONENTS[@]} " =~ " base " ]]; then
     exit 1
 fi
 
-# Build each component
+# Each component is a dir under aws/scripts/components/ with install-<name>.sh
 for component in "${COMPONENTS[@]}"; do
     installer="${COMPONENTS_DIR}/${component}/install-${component}.sh"
-    
+
     if [[ ! -f "$installer" ]]; then
         echo "ERROR: Component installer not found: $installer"
+        echo "       Currently shipped components: base, system"
         exit 1
     fi
-    
+
     echo "Installing component: $component"
     bash "$installer"
 done
 
-echo "✅ Safebox AMI build complete!"
+echo ""
+echo "AMI build complete. Components installed: ${COMPONENTS[*]}"
+echo ""
+echo "Verify the cascade SHA256 attestation:"
+echo "  sha256sum /opt/safebox/manifests/*.json | sha256sum"

@@ -1,0 +1,18 @@
+{
+    "name": "safebox-system",
+    "version": "1.1.0",
+    "private": true,
+    "description": "Infrastructure-side HTTP API (System component) for Safebox privileged operations. HMAC-authenticated, runs as unprivileged user, elevates via sudo for specific commands. Hosts an embeddings subprocess for in-AMI feature extraction.",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "test": "node test/run.js"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "dependencies": {
+        "@huggingface/transformers": "3.3.3"
+    },
+    "license": "Apache-2.0"
+}

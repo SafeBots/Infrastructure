@@ -405,6 +405,5 @@ chmod 0644 /opt/safebox/manifests/base.json
 echo "✅ Base component installed (1.0.0-pre)"
 echo ""
 echo "Next steps:"
-echo "  - Run install-system.sh to enable the localhost-only Code plugin API"
-echo "  - Run install-llm-*.sh for the LLM tier you want"
+echo "  - Run install-system.sh to enable the Safebox host API on Unix sockets at /run/safebox/"
 echo "  - Verify the cascade SHA256 attestation with scripts/verify-build.sh"

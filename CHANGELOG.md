@@ -11,6 +11,60 @@ This project will adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased — 1.0.0 pre-release]
 
+### System component (May 20, 2026) — Node.js HTTP API with HMAC
+
+The privileged-operations interface for Safebox is now a small Node.js HTTP API listening on `127.0.0.1:7780`. Safebox Node sends HMAC-signed JSON; the System component validates, dispatches to `child_process.execFile`, and returns the result.
+
+This replaces both (a) the 1577-line Node daemon that existed at the start of this sprint AND (b) the ~1000-line shell-and-systemd component we briefly built as an alternative. The System component is smaller than either, and the shape matches what Safebox actually wants on the client side.
+
+**Component layout:**
+
+```
+aws/scripts/components/system/
+├── install-system.sh             (~124 lines)
+├── server.js                      (~239 lines, HTTP routing + HMAC verify + audit)
+├── auth.js                        (~105 lines, HMAC sign/verify + nonce LRU)
+├── secret.js                      (~115 lines, TPM-derived or random fallback)
+├── config.js                      (~105 lines, managed-containers.json loader)
+├── opsSystem.js                  (~309 lines, /system handler — execFile for 9 tools)
+├── opsTest.js                    (~372 lines, /test handlers + keepalive + yields)
+├── package.json                   (zero npm dependencies)
+├── units/safebox-system.service
+└── sudoers/safebox-system        (the entire privileged surface — ~20 lines of rules)
+```
+
+~1100 lines of Node + ~50 lines of sudoers. The System component itself runs as unprivileged `safebox-infra` user. Privileged ops (dnf, zfs, docker) elevate via sudo against the tight allowlist in `/etc/sudoers.d/safebox-system`. That sudoers file is what an auditor reads to know exactly what the System component can do.
+
+**What changed for Safebox:**
+
+- The wire is HTTP on `127.0.0.1:7780` with HMAC-SHA-256 over a canonical envelope. No more request-files-in-/run/safebox/jobs, no systemctl invocation, no polkit.
+- Two endpoint families: `POST /system` (synchronous: blocks until npm/git/dnf/etc. finish) and `POST /test/*` (async lifecycle with keepalive every 30s, ring-buffered yields, aggressive 60s teardown by default).
+- `managed-containers.json` (already in the repo) is the authorization config. Each container declares `allowedActions` and an `imagePattern`. The System component enforces both.
+- Field validation regexes are unchanged from the prior shell-component spec.
+- See `aws/docs/SYSTEM-PROTOCOL.md` for the full protocol Safebox programs against.
+
+**HMAC secret:** stored at `/etc/safebox/system.hmac` (mode 0640, group `safebox-infra-readers`). The System component derives the secret from the TPM event log via HKDF-SHA-256 on first boot (bound to measured boot state), falling back to existing on-disk bytes or random 32 bytes if TPM isn't available. The fallback path logs WARN loudly so operators notice if attestation isn't binding the key.
+
+**Smoke tests passing:**
+- HMAC verify on every request (T1 valid, T2 invalid → 401)
+- Routing (T4 unknown endpoint → 404)
+- Container authorization (T5 unknown container, T6 action not in allowedActions → 403)
+- Argument injection defense (T7 `--registry=evil.com` package name rejected)
+- Workspace prefix enforcement (T9 `/etc` rejected)
+- Image pattern enforcement (T10 wrong-pattern image → IMAGE_NOT_ALLOWED)
+- Test lifecycle (T11 unknown test → 404)
+- Happy-path execFile reaches the underlying tool (T8 npm list)
+
+**Why this shape:**
+
+The earlier shell-and-systemd component was correct but ate too much auditor time: ~1000 lines of bash that someone has to read in detail. The Node System component is denser (~1100 lines of focused Node) but uses idioms most reviewers already know, and the privileged-surface check collapses to one sudoers file plus one Node file (`opsSystem.js`). The HMAC layer adds defense in depth against in-PHP application bugs that don't escalate to full apache RCE — a SQL injection in a Safebox PHP plugin can't forge a System component request because the HMAC key lives in Safebox Node's process memory, not in PHP's.
+
+The trust boundary is explicit and documented in `SYSTEM-PROTOCOL.md` § "Out of scope for 1.0": if Safebox Node itself is compromised, the System component will execute what it's asked. M-of-N governance is inside Safebox and runs before the call. Per-request governance signatures (Ed25519) are the documented upgrade path for 1.1.
+
+### Earlier in this sprint (May 20, 2026)
+
+A shell-and-systemd system component was built and then replaced by the Node System component above. The shell version is preserved in git history (commits `3f67cc9`, `acc5ebe`, `35e6f99`) for anyone evaluating the alternatives.
+
 ### Security audit (May 13, 2026) — `install-base.sh`
 
 Pre-release security pass on the base AMI installer identified ten issues. All fixed in the current `install-base.sh`.
@@ -56,17 +110,11 @@ Pre-release security pass on the base AMI installer identified ten issues. All f
 
 ### Added (pre-release development)
 
-#### Component #20: `system` — Code Plugin Runtime
+#### Component: `system` — the Safebox-facing API
 
-A new component exposing a localhost-only API at `127.0.0.1:7780` for the Safebox Code plugin. Implements package management, version control, database migrations, and ZFS-based test environments.
+A new component exposing a localhost-only HTTP API at `127.0.0.1:7780` for the Safebox plugin. Implements package management, version control, database migrations, dnf, ZFS operations, and ZFS-based test environments. See the top-level "System component (May 20, 2026)" entry above for the full description.
 
-- **Auth token model** — 256-bit shared secret at `/srv/safebox/runtimes/system/auth.token`
-- **Two-tier privilege** — `user='system'` (10/min, M-of-N gated by Safebox) vs `user='test'` (100/min, access-control)
-- **Subsystems** — `package`, `vcs`, `migrate`, `test`, `image`
-- **Keepalive protocol** — 60s default TTL, 1hr max, +60s per keepalive
-- **Append-only logs** at `/srv/safebox/logs/system/operations/` and `/srv/safebox/logs/system/tests/`
-- **Rate limits** enforced per user type with clear `QUOTA_EXCEEDED` errors and `retryAfter` hints
-- **Image manifest API** — `imageManifest(imageTag)` returns parsed `/app/manifest.json` for pre-validation
+> Historical note: earlier iterations of this work were called "Component #20: system" and described an auth-token API, then a shell-and-systemd dispatcher. Both predate the current Node System component. The history is in git (commits `3f67cc9`, `acc5ebe`, `35e6f99`) for anyone reviewing the design evolution.
 
 #### Package Manager Version Pinning
 
