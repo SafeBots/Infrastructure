@@ -1,0 +1,28 @@
+{
+  "_comment": "Sample npm artifact manifest for Qbix itself. The package that powers the Safebox plugin's Node side. Internal packages installed this way get the same M-of-N treatment as third-party ones — no special path for first-party code.",
+  "name": "qbix",
+  "version": "0.10.0",
+  "kind": "npm",
+  "consumer": "node-runtime",
+  "license": "MIT",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 4180000,
+  "files": [
+    {
+      "path": "qbix-0.10.0.tgz",
+      "sizeBytes": 4180000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "sources": [
+        "https://registry.npmjs.org/qbix/-/qbix-0.10.0.tgz",
+        "https://github.com/Qbix/Platform/releases/download/v0.10.0/qbix-0.10.0.tgz"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "tarball extract into node_modules under /var/lib/safebox/node-runtime/qbix-platform/",
+    "publisher": "Greg Magarshak / Qbix Inc.",
+    "homepage": "https://qbix.com",
+    "note": "First-party doesn't mean unverified-by-default. The Qbix maintainer signs releases with a key whose public part is part of the M-of-N quorum for `packages/node/install` actions. This puts the Qbix release process under the same governance as everything else."
+  }
+}

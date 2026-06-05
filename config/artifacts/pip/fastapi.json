@@ -1,0 +1,32 @@
+{
+  "_comment": "Sample pip artifact manifest. sha256 comes from PyPI's JSON API (https://pypi.org/pypi/fastapi/0.115.0/json — see .urls[0].digests.sha256). Install is via `pip install --require-hashes` against a generated requirements.txt referencing the locally cached wheel.",
+  "name": "fastapi",
+  "version": "0.115.0",
+  "kind": "pip",
+  "consumer": "python-runtime",
+  "license": "MIT",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 94400,
+  "files": [
+    {
+      "path": "fastapi-0.115.0-py3-none-any.whl",
+      "sizeBytes": 94400,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://files.pythonhosted.org/packages/.../fastapi-0.115.0-py3-none-any.whl",
+        "https://mirror.internal.safebox.example/pypi/fastapi-0.115.0-py3-none-any.whl"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "pip install --require-hashes against generated requirements.txt",
+    "lockfileSource": "pip-compile --generate-hashes",
+    "fetchCommand": "curl -sL https://pypi.org/pypi/fastapi/0.115.0/json | jq '.urls[] | {filename, sha256: .digests.sha256}'",
+    "consumerExamples": [
+      "model-runners/privacy-filter (FastAPI service)",
+      "model-runners/whisper-asr (planned)",
+      "model-runners/kokoro-tts (planned)"
+    ],
+    "note": "Most planned runners use FastAPI. Shared dependencies like this one are installed once into a Python runtime that the runners mount, rather than per-runner. That keeps the hash set small and the audit surface small."
+  }
+}

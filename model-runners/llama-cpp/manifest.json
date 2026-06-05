@@ -1,0 +1,56 @@
+{
+  "_comment": "Safebox image manifest. Declares the envVars this runner accepts, the unix socket it binds, and the exit codes the system component should interpret.",
+  "runnerType": "llama-cpp",
+  "runtime": "llama.cpp",
+  "wireProtocolVersion": "1.1",
+
+  "envVars": {
+    "required": [
+      "LLAMA_MODEL_PATH"
+    ],
+    "optional": [
+      "RUNNER_ID",
+      "SERVICE_ID",
+      "LLAMA_N_GPU_LAYERS",
+      "LLAMA_CTX_SIZE",
+      "LLAMA_PARALLEL",
+      "LLAMA_THREADS",
+      "LLAMA_FLASH_ATTN",
+      "LLAMA_CURRENT_MODEL_ID",
+      "SAFEBOX_SOCKET_PATH",
+      "ENABLE_UNIX_SOCKET",
+      "SLOT_STATE_DIR"
+    ]
+  },
+
+  "outputFiles": [
+    {
+      "path": "/var/lib/safebox-llama-cpp/slots/<runner-id>/<slot-id>.bin",
+      "kind": "kv-cache-slot",
+      "description": "Persisted slot state from /v1/cache/slots/save"
+    }
+  ],
+
+  "exitCodes": {
+    "0":   "Clean shutdown",
+    "1":   "Fatal error during startup",
+    "2":   "llama-server subprocess died",
+    "139": "Segfault in llama-server (likely OOM)"
+  },
+
+  "resourceHints": {
+    "gpuMemoryMB": "varies with quant + ctx",
+    "cpuCores":    "at least 4 recommended",
+    "diskMB":      "model size + slot state"
+  },
+
+  "protocols": ["llm"],
+
+  "endpoints": {
+    "canonical":    ["/v1/chat", "/v1/complete", "/v1/embed"],
+    "lifecycle":    ["/v1/models/load", "/v1/models/unload", "/v1/cache/flush"],
+    "slots":        ["/v1/cache/slots", "/v1/cache/slots/allocate", "/v1/cache/slots/save", "/v1/cache/slots/restore", "/v1/cache/slots/release"],
+    "introspect":   ["/v1/capabilities", "/v1/capacity"],
+    "health":       ["/health"]
+  }
+}

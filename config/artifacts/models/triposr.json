@@ -1,0 +1,55 @@
+{
+  "_comment": "Canonical baseline manifest for TripoSR by Stability AI + Tripo (MIT). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing.",
+  "name": "triposr-1.0",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:triposr-3d",
+  "license": "MIT",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "triposr-3d",
+  "modality": "3d-mesh",
+  "protocol": "/v1/3d/generate",
+  "totalSizeBytes": 1700001200,
+  "files": [
+    {
+      "path": "model.ckpt",
+      "sizeBytes": 1700000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/stabilityai/TripoSR/resolve/main/model.ckpt"
+      ]
+    },
+    {
+      "path": "config.yaml",
+      "sizeBytes": 1200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/stabilityai/TripoSR/resolve/main/config.yaml"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": false,
+    "text": "Generated using TripoSR by Stability AI + Tripo AI (MIT)",
+    "url": "https://github.com/VAST-AI-Research/TripoSR",
+    "licenseUrl": "https://opensource.org/licenses/MIT"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 6,
+    "recommendedGpu": "Any consumer GPU; runs sub-second on RTX 4090",
+    "supportsCpu": true,
+    "applePlatform": true
+  },
+  "metadata": {
+    "task": "Single image \u2192 3D mesh reconstruction",
+    "outputFormat": "OBJ / GLB mesh with vertex colors",
+    "inputs": [
+      "single_rgb_image"
+    ],
+    "outputs": [
+      "3d_mesh"
+    ],
+    "inferenceTime": "<1 second on consumer GPU",
+    "license_notes": "MIT \u2014 feed-forward single-image reconstruction. For PBR materials and higher quality, consider Hunyuan3D 2.1 (Tencent Community License \u2014 requires separate review)."
+  }
+}

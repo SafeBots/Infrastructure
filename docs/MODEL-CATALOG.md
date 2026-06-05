@@ -2,7 +2,40 @@
 
 **Comprehensive list of open-source models for all Safebox protocols**
 
-**Last Updated:** April 2026
+**Last Updated:** June 2026
+
+> **Part of a unified artifact framework.** Models, RPM packages, npm packages, and pip packages all flow through the same M-of-N hash-allowlist pattern. See [INDUCTIVE-TRUST.md](./INDUCTIVE-TRUST.md) for the auditor-facing proof of the property, and [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for the operational workflow. The unified manifests live under [`config/artifacts/`](../config/artifacts/) — models at `config/artifacts/models/`, RPMs at `config/artifacts/rpm/`, npm at `config/artifacts/npm/`, pip at `config/artifacts/pip/`.
+
+---
+
+## 🎯 Curated Roster — Apache 2.0 / MIT Picks (Batch 1)
+
+These six models are the **commercial-clean baseline** every Safebox deployment ships with. Each has Apache 2.0 or MIT licensing, no revenue caps, no non-commercial restrictions, no gated-license click-through. Customers can deploy without legal review. Manifests live in [`config/artifacts/models/`](../config/artifacts/models/); installation flow in [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md).
+
+| Model | Modality | License | Hardware | Manifest |
+|---|---|---|---|---|
+| **YuE-s1-7B** | Music (full songs from lyrics + style) | Apache 2.0 | 24 GB GPU | [yue-s1-7b.json](../config/artifacts/models/yue-s1-7b.json) |
+| **Mochi 1** | Video (text→video, 5.4s @ 30fps) | Apache 2.0 | 60 GB GPU (H100) | [mochi-1-preview.json](../config/artifacts/models/mochi-1-preview.json) |
+| **FLUX.1 [schnell]** | Image (text→image, 4-step) | Apache 2.0 | 17 GB GPU | [flux-1-schnell.json](../config/artifacts/models/flux-1-schnell.json) |
+| **Kokoro 82M v1.0** | Speech (text→speech, 9 langs) | Apache 2.0 | CPU OK; 4 GB GPU optional | [kokoro-82m.json](../config/artifacts/models/kokoro-82m.json) |
+| **Whisper Large v3** | Transcription (99 langs) | MIT | 10 GB GPU; CPU OK | [whisper-large-v3.json](../config/artifacts/models/whisper-large-v3.json) |
+| **TripoSR** | 3D (single image → mesh, sub-1s) | MIT | 6 GB GPU; CPU OK | [triposr.json](../config/artifacts/models/triposr.json) |
+| **Nemotron 3 Nano Omni** | Multimodal (vision + audio + video + text in one model) | NVIDIA Open Model License | 24 GB GPU; NVFP4 fits in 16 GB | [nemotron-3-nano-omni.json](../config/artifacts/models/nemotron-3-nano-omni.json) |
+
+**Why these specific six:**
+- They span every Safebox protocol with at least one option (LLMs are handled separately via the vLLM and llama.cpp runners — see [llama-cpp/README.md](../model-runners/llama-cpp/README.md))
+- They're all Apache 2.0 or MIT — no license-classification work needed for customers
+- They're each the cleanest-licensed serious option in their modality as of June 2026
+
+**Roadmap (Batch 2 — Apache 2.0 quality upgrades):**
+Magenta RealTime v1 (Apache+CC-BY 4.0 music), Wan 2.2 (Apache 2.0 video at MoE 14B), Chatterbox (MIT voice cloning), Parler-TTS (Apache 2.0 TTS).
+
+**Roadmap (Batch 3 — quality with license-review burden):**
+Stable Audio 3 (Stability Community), HunyuanVideo 1.5 (Tencent Community), Hunyuan3D 2.1 (Tencent Community), FLUX.1 [dev] (BFL non-commercial — needs separate commercial agreement).
+
+**Skipped entirely** (CC-BY-NC or other non-commercial): MusicGen / AudioGen (Meta), XTTS v2 (Coqui CPML), F5-TTS (CC-BY-NC), Voxtral (CC-BY-NC), LeVo 2, Khala.
+
+See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes, run M-of-N signing, and roll forward/backward through model versions.
 
 ---
 

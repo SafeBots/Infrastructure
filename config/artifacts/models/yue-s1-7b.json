@@ -1,0 +1,101 @@
+{
+  "_comment": "Canonical baseline manifest for YuE-s1-7B (Apache 2.0). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing. See docs/MODEL-UPDATES.md.",
+  "name": "yue-s1-7b-anneal-en-cot",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:yue-music",
+  "license": "Apache-2.0",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "yue-music",
+  "modality": "audio-music",
+  "protocol": "/v1/audio/generate",
+  "totalSizeBytes": 14849502400,
+  "files": [
+    {
+      "path": "model.safetensors.index.json",
+      "sizeBytes": 28000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/model.safetensors.index.json"
+      ]
+    },
+    {
+      "path": "model-00001-of-00004.safetensors",
+      "sizeBytes": 4965000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/model-00001-of-00004.safetensors"
+      ]
+    },
+    {
+      "path": "model-00002-of-00004.safetensors",
+      "sizeBytes": 4998000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/model-00002-of-00004.safetensors"
+      ]
+    },
+    {
+      "path": "model-00003-of-00004.safetensors",
+      "sizeBytes": 4849000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/model-00003-of-00004.safetensors"
+      ]
+    },
+    {
+      "path": "model-00004-of-00004.safetensors",
+      "sizeBytes": 19972000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/model-00004-of-00004.safetensors"
+      ]
+    },
+    {
+      "path": "config.json",
+      "sizeBytes": 2400,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/config.json"
+      ]
+    },
+    {
+      "path": "tokenizer.json",
+      "sizeBytes": 17500000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot/resolve/main/tokenizer.json"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": true,
+    "text": "Generated using YuE by HKUST/M-A-P",
+    "url": "https://github.com/multimodal-art-projection/YuE",
+    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+    "labeling": "We recommend labeling outputs as 'AI-generated' or 'YuE-generated' when sharing publicly"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 24,
+    "recommendedGpu": "A100 80GB or 2\u00d7A6000 48GB",
+    "supportsCpu": false,
+    "applePlatform": false
+  },
+  "metadata": {
+    "task": "Full-song music generation from lyrics + style prompt",
+    "outputFormat": "stereo WAV, 44.1kHz",
+    "maxDuration": "5 minutes",
+    "inputs": [
+      "lyrics_text",
+      "style_prompt_text",
+      "optional_audio_reference"
+    ],
+    "language": [
+      "en",
+      "ja",
+      "ko",
+      "zh"
+    ],
+    "license_notes": "Apache 2.0 (relicensed January 30, 2025 from original CC-BY-NC-SA). Commercial use, modification, redistribution all permitted. Attribution requested."
+  }
+}

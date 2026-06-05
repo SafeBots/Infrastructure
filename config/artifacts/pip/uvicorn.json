@@ -1,0 +1,29 @@
+{
+  "_comment": "Sample pip artifact manifest for uvicorn. ASGI server underlying every FastAPI runner. Touches the network on every request, so it's exactly the kind of dependency that benefits from a pinned hash.",
+  "name": "uvicorn",
+  "version": "0.34.0",
+  "kind": "pip",
+  "consumer": "python-runtime",
+  "license": "BSD-3-Clause",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 62800,
+  "files": [
+    {
+      "path": "uvicorn-0.34.0-py3-none-any.whl",
+      "sizeBytes": 62800,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://files.pythonhosted.org/packages/.../uvicorn-0.34.0-py3-none-any.whl",
+        "https://mirror.internal.safebox.example/pypi/uvicorn-0.34.0-py3-none-any.whl"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "pip install --require-hashes",
+    "lockfileSource": "pip-compile --generate-hashes",
+    "fetchCommand": "curl -sL https://pypi.org/pypi/uvicorn/0.34.0/json | jq '.urls[] | {filename, sha256: .digests.sha256}'",
+    "exposesPort": true,
+    "severity": "elevated",
+    "note": "Any pip package that opens a listening socket gets an elevated severity tag. Communities can use this to set a higher M-of-N threshold for `packages/python/install` actions involving elevated-severity packages."
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "_comment": "Canonical baseline manifest for Kokoro v1.0 by hexgrad (Apache 2.0). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing.",
+  "name": "kokoro-82m-v1.0",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:kokoro-tts",
+  "license": "Apache-2.0",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "kokoro-tts",
+  "modality": "audio-speech",
+  "protocol": "/v1/speech",
+  "totalSizeBytes": 327010000,
+  "files": [
+    {
+      "path": "kokoro-v1_0.pth",
+      "sizeBytes": 327000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v1_0.pth"
+      ]
+    },
+    {
+      "path": "config.json",
+      "sizeBytes": 1800,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/config.json"
+      ]
+    },
+    {
+      "path": "VOICES.md",
+      "sizeBytes": 8200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/VOICES.md"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": false,
+    "text": "Kokoro TTS by hexgrad (Apache 2.0)",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+    "note": "Apache 2.0 does not require attribution in output, but the LICENSE file must be preserved in any redistribution of the weights themselves"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 0,
+    "recommendedGpu": "Any (CPU works fine; 36x real-time on RTX 4090)",
+    "supportsCpu": true,
+    "applePlatform": true
+  },
+  "metadata": {
+    "task": "Text-to-speech synthesis",
+    "outputFormat": "WAV PCM 24kHz mono",
+    "params": "82M (StyleTTS2 architecture)",
+    "languages": [
+      "en-US",
+      "en-GB",
+      "ja",
+      "zh",
+      "fr",
+      "es",
+      "hi",
+      "it",
+      "pt-BR"
+    ],
+    "voices": "10 curated voice presets",
+    "speed": "36\u201396\u00d7 real-time on consumer GPU; runs on CPU",
+    "tts_arena_rank": "#1 (Jan 2026)",
+    "license_notes": "Apache 2.0 \u2014 cleanest license in the TTS space. Suitable for any commercial deployment."
+  }
+}

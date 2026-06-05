@@ -1,0 +1,59 @@
+{
+  "_comment": "Canonical baseline manifest for Mochi 1 by Genmo (Apache 2.0). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing.",
+  "name": "mochi-1-preview",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:diffusion-video",
+  "license": "Apache-2.0",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "diffusion-video",
+  "modality": "video",
+  "protocol": "/v1/video/generate",
+  "totalSizeBytes": 42000000000,
+  "files": [
+    {
+      "path": "dit/dit.safetensors",
+      "sizeBytes": 30000000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/genmo/mochi-1-preview/resolve/main/dit.safetensors"
+      ]
+    },
+    {
+      "path": "vae/vae.safetensors",
+      "sizeBytes": 2200000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/genmo/mochi-1-preview/resolve/main/vae.safetensors"
+      ]
+    },
+    {
+      "path": "text_encoder/t5xxl_fp16.safetensors",
+      "sizeBytes": 9800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/genmo/mochi-1-preview/resolve/main/t5xxl_fp16.safetensors"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": true,
+    "text": "Generated using Mochi 1 by Genmo",
+    "url": "https://github.com/genmoai/models",
+    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 60,
+    "recommendedGpu": "H100 80GB or 4\u00d7A100 80GB",
+    "supportsCpu": false,
+    "applePlatform": false
+  },
+  "metadata": {
+    "task": "Text-to-video generation",
+    "outputFormat": "MP4 H.264, 480p or 720p",
+    "maxDuration": "5.4 seconds",
+    "fps": 30,
+    "params": "10B (Asymmetric Diffusion Transformer)",
+    "license_notes": "Apache 2.0 \u2014 cleanest license for commercial video generation in the open-weight space"
+  }
+}

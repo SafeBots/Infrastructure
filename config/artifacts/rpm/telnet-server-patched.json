@@ -1,0 +1,29 @@
+{
+  "_comment": "Sample RPM artifact manifest for an explicitly patched build. Demonstrates how a CVE remediation flows through the manifest system — the new fixed build gets a new hash and a new M-of-N approval, and old vulnerable builds with their old hashes simply can never be installed by name without a manifest re-signing.",
+  "name": "telnet-server-patched",
+  "version": "0.17-90.amzn2023.0.3-cve-2026-32746",
+  "kind": "rpm",
+  "consumer": "system",
+  "license": "BSD-2-Clause",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 71200,
+  "files": [
+    {
+      "path": "telnet-server-0.17-90.amzn2023.0.3.x86_64.rpm",
+      "sizeBytes": 71200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://cdn.amazonlinux.com/al2023/core/mirrors/2023.5.20250218/x86_64/Packages/telnet-server-0.17-90.amzn2023.0.3.x86_64.rpm"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "dnf localinstall",
+    "gpgVerify": true,
+    "gpgKey": "/etc/pki/rpm-gpg/RPM-GPG-KEY-amazon-linux-2023",
+    "severity": "critical",
+    "cve": "CVE-2026-32746",
+    "supersedes": ["telnet-server@0.17-90.amzn2023.0.2"],
+    "note": "Example of a CVE-driven artifact update. The previous build (-90.0.2) had a known vulnerable hash; this build (-90.0.3) carries the remediation. The Safebox install pipeline refuses anything not on the signed allowlist, so a Safebox still running -90.0.2 cannot accidentally install -90.0.3 without M-of-N approval — and conversely, once -90.0.3 is approved, attempts to reinstall -90.0.2 fail hash verification."
+  }
+}

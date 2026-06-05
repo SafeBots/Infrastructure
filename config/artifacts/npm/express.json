@@ -1,0 +1,28 @@
+{
+  "_comment": "Sample npm artifact manifest. The `integrity` field is npm-native (sha512 base64) and is what `npm view express@4.18.2 dist.integrity` returns. We carry both: sha256 (universal, what our pipeline computes) and integrity (npm-native, what npm install verifies). Both must match before install proceeds.",
+  "name": "express",
+  "version": "4.18.2",
+  "kind": "npm",
+  "consumer": "node-runtime",
+  "license": "MIT",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 219000,
+  "files": [
+    {
+      "path": "express-4.18.2.tgz",
+      "sizeBytes": 219000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "integrity": "sha512-5/PsL6iGPdfQ/lKM1UuielYgv3BUoJfz1aUwU9vHZ+J7gyvwdQXFEBIEIaxeGf0GIcreATNyBExtalisDbuMqQ==",
+      "sources": [
+        "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
+        "https://mirror.internal.safebox.example/npm/express-4.18.2.tgz"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "tarball extract into node_modules under /var/lib/safebox/node-runtime/<consumer-id>/",
+    "lockfileSource": "package-lock.json (npm 5+)",
+    "fetchCommand": "npm view express@4.18.2 dist.integrity && npm view express@4.18.2 dist.tarball",
+    "note": "When the populated manifest is signed, the sha256 and the integrity must both verify on download. If they disagree, the install aborts — that disagreement would indicate either a corrupted download or a registry compromise."
+  }
+}

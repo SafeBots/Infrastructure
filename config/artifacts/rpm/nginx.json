@@ -1,0 +1,27 @@
+{
+  "_comment": "Sample RPM artifact manifest. The hash here would be filled by the build pipeline via `rpm -qp --queryformat '%{SIGSHA256}' nginx-*.rpm` or `dnf repoquery --location --queryformat=...`. Placeholder until first build.",
+  "name": "nginx",
+  "version": "1.26.2-1.amzn2023.0.2",
+  "kind": "rpm",
+  "consumer": "system",
+  "license": "BSD-2-Clause",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 1378400,
+  "files": [
+    {
+      "path": "nginx-1.26.2-1.amzn2023.0.2.x86_64.rpm",
+      "sizeBytes": 1378400,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://cdn.amazonlinux.com/al2023/core/mirrors/2023.5.20250218/x86_64/Packages/nginx-1.26.2-1.amzn2023.0.2.x86_64.rpm",
+        "https://mirror.internal.safebox.example/al2023/nginx-1.26.2-1.amzn2023.0.2.x86_64.rpm"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "dnf localinstall",
+    "gpgVerify": true,
+    "gpgKey": "/etc/pki/rpm-gpg/RPM-GPG-KEY-amazon-linux-2023",
+    "note": "dnf already verifies the GPG signature; the sha256 in this manifest adds a second layer that binds the install to a specific M-of-N-approved hash. If Amazon Linux ships a new build of the same version with a different sha256 (rebuild for a security patch, say), the manifest must be re-signed before this Safebox will install it."
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "_comment": "Canonical baseline manifest for Whisper Large v3 by OpenAI (MIT). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing.",
+  "name": "whisper-large-v3",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:whisper-asr",
+  "license": "MIT",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "whisper-asr",
+  "modality": "audio-transcription",
+  "protocol": "/v1/transcribe",
+  "totalSizeBytes": 3102486740,
+  "files": [
+    {
+      "path": "model.safetensors",
+      "sizeBytes": 3100000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3/resolve/main/model.safetensors"
+      ]
+    },
+    {
+      "path": "config.json",
+      "sizeBytes": 2200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3/resolve/main/config.json"
+      ]
+    },
+    {
+      "path": "tokenizer.json",
+      "sizeBytes": 2480000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3/resolve/main/tokenizer.json"
+      ]
+    },
+    {
+      "path": "preprocessor_config.json",
+      "sizeBytes": 340,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3/resolve/main/preprocessor_config.json"
+      ]
+    },
+    {
+      "path": "generation_config.json",
+      "sizeBytes": 4200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3/resolve/main/generation_config.json"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": false,
+    "text": "Whisper by OpenAI (MIT)",
+    "url": "https://github.com/openai/whisper",
+    "licenseUrl": "https://opensource.org/licenses/MIT"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 10,
+    "recommendedGpu": "A100 / RTX 4090 / Apple Silicon M2+",
+    "supportsCpu": true,
+    "applePlatform": true,
+    "appleHardwareNote": "MLX implementation runs well on Apple Silicon"
+  },
+  "metadata": {
+    "task": "Automatic speech recognition + translation",
+    "outputFormat": "Text transcription with optional timestamps and language detection",
+    "params": "1.55B",
+    "languages": [
+      "multilingual: 99 languages"
+    ],
+    "wordErrorRate": "~7.5% on LibriSpeech test-clean",
+    "context": "30s windows with chunked long-form support",
+    "license_notes": "MIT \u2014 among the cleanest possible licenses. No restrictions."
+  }
+}

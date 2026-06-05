@@ -1,0 +1,28 @@
+{
+  "_comment": "Sample RPM artifact manifest for openssl-libs. Cryptography library — exactly the kind of OS package that benefits from M-of-N hash pinning (XZ-style supply chain attacks land here first).",
+  "name": "openssl-libs",
+  "version": "3.2.2-1.amzn2023.0.2",
+  "kind": "rpm",
+  "consumer": "system",
+  "license": "Apache-2.0",
+  "licenseCategory": "commercial-clean",
+  "totalSizeBytes": 2461200,
+  "files": [
+    {
+      "path": "openssl-libs-3.2.2-1.amzn2023.0.2.x86_64.rpm",
+      "sizeBytes": 2461200,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://cdn.amazonlinux.com/al2023/core/mirrors/2023.5.20250218/x86_64/Packages/openssl-libs-3.2.2-1.amzn2023.0.2.x86_64.rpm",
+        "https://mirror.internal.safebox.example/al2023/openssl-libs-3.2.2-1.amzn2023.0.2.x86_64.rpm"
+      ]
+    }
+  ],
+  "metadata": {
+    "installMethod": "dnf localinstall",
+    "gpgVerify": true,
+    "gpgKey": "/etc/pki/rpm-gpg/RPM-GPG-KEY-amazon-linux-2023",
+    "severity": "critical",
+    "note": "Crypto libraries are the highest-risk RPM category. Communities should set their `packages/system/install` policy threshold higher for these — typically 4 of 5 or 5 of 7 — than for application packages."
+  }
+}

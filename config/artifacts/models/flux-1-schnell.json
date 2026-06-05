@@ -1,0 +1,55 @@
+{
+  "_comment": "Canonical baseline manifest for FLUX.1 [schnell] by Black Forest Labs (Apache 2.0). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing.",
+  "name": "flux-1-schnell",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:comfyui-image",
+  "license": "Apache-2.0",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "comfyui-image",
+  "modality": "image",
+  "protocol": "/v1/image/generate",
+  "totalSizeBytes": 24135000000,
+  "files": [
+    {
+      "path": "flux1-schnell.safetensors",
+      "sizeBytes": 23800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
+      ]
+    },
+    {
+      "path": "ae.safetensors",
+      "sizeBytes": 335000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": true,
+    "text": "Generated using FLUX.1 [schnell] by Black Forest Labs",
+    "url": "https://github.com/black-forest-labs/flux",
+    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 17,
+    "recommendedGpu": "A100 40GB / RTX 4090 / L40S",
+    "supportsCpu": false,
+    "applePlatform": true,
+    "appleHardwareNote": "Runs on Apple Silicon via MLX with quantization"
+  },
+  "metadata": {
+    "task": "Text-to-image generation",
+    "outputFormat": "PNG / WebP, up to 2048\u00d72048",
+    "params": "12B",
+    "stepsTypical": 4,
+    "stepsRange": [
+      1,
+      50
+    ],
+    "license_notes": "Apache 2.0 \u2014 FLUX.1 [dev] and [pro] variants require separate non-commercial / commercial licensing from BFL. Only [schnell] is in this manifest."
+  }
+}

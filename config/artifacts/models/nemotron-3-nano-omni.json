@@ -1,0 +1,136 @@
+{
+  "_comment": "Canonical baseline manifest for NVIDIA Nemotron 3 Nano Omni (NVIDIA Open Model License). Per-file sha256 values are PLACEHOLDERS \u2014 they must be filled in by the install pipeline before M-of-N signing.",
+  "name": "nemotron-3-nano-omni",
+  "version": "1.0.0",
+  "kind": "model",
+  "consumer": "model-runner:nemotron-omni",
+  "license": "NVIDIA-Open-Model-License",
+  "licenseCategory": "commercial-clean",
+  "runnerType": "nemotron-omni",
+  "modality": "multimodal",
+  "protocol": "/v1/chat",
+  "totalSizeBytes": 60015216200,
+  "files": [
+    {
+      "path": "model.safetensors.index.json",
+      "sizeBytes": 65000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model.safetensors.index.json"
+      ]
+    },
+    {
+      "path": "model-00001-of-00007.safetensors",
+      "sizeBytes": 8800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00001-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "model-00002-of-00007.safetensors",
+      "sizeBytes": 8800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00002-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "model-00003-of-00007.safetensors",
+      "sizeBytes": 8800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00003-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "model-00004-of-00007.safetensors",
+      "sizeBytes": 8800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00004-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "model-00005-of-00007.safetensors",
+      "sizeBytes": 8800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00005-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "model-00006-of-00007.safetensors",
+      "sizeBytes": 8800000000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00006-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "model-00007-of-00007.safetensors",
+      "sizeBytes": 7195935000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/model-00007-of-00007.safetensors"
+      ]
+    },
+    {
+      "path": "config.json",
+      "sizeBytes": 4800,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/config.json"
+      ]
+    },
+    {
+      "path": "tokenizer.json",
+      "sizeBytes": 19200000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/tokenizer.json"
+      ]
+    },
+    {
+      "path": "preprocessor_config.json",
+      "sizeBytes": 11400,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sources": [
+        "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni/resolve/main/preprocessor_config.json"
+      ]
+    }
+  ],
+  "attribution": {
+    "required": false,
+    "text": "Nemotron 3 Nano Omni by NVIDIA (NVIDIA Open Model License)",
+    "url": "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni",
+    "licenseUrl": "https://developer.nvidia.com/downloads/license/nvidia-open-model-license-agreement-juno-2024",
+    "note": "NVIDIA Open Model License is more permissive than Apache 2.0 \u2014 commercial use and redistribution permitted without crediting NVIDIA"
+  },
+  "hardware": {
+    "minGpuMemoryGB": 24,
+    "recommendedGpu": "H100 80GB / A100 80GB / single L40S",
+    "supportsCpu": false,
+    "applePlatform": false,
+    "note": "30B params, 3B active per inference (hybrid Mamba-Transformer MoE). Activates the modality-specific expert per token. NVFP4 checkpoint runs on 16GB."
+  },
+  "metadata": {
+    "task": "Multimodal reasoning: vision, audio, video, text \u2014 all in one model",
+    "outputFormat": "text response; can ingest images, audio waveforms, video frames",
+    "params": "30B total, 3B active",
+    "contextLength": 1000000,
+    "checkpointVariants": [
+      "BF16",
+      "FP8",
+      "NVFP4"
+    ],
+    "benchmarks": [
+      "MMlongbench-Doc",
+      "OCRBenchV2",
+      "WorldSense",
+      "DailyOmni",
+      "VoiceBench"
+    ],
+    "license_notes": "NVIDIA Open Model License (Juno 2024). Permissive \u2014 commercial use, modification, redistribution all allowed without attribution. Released April 29, 2026. Replaces what would otherwise be separate Whisper + LLM + vision-encoder runners for use cases that fit its modality coverage."
+  }
+}
