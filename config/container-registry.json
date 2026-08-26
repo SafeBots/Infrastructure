@@ -1,0 +1,119 @@
+{
+  "safebox-nginx": {
+    "scope": "web.nginx",
+    "governance": {
+      "requiredSignatures": 3,
+      "totalSigners": 5,
+      "authorizedKeys": ["admin1", "admin2", "admin3", "admin4", "admin5"],
+      "exponentialBackoff": false,
+      "rateLimit": {
+        "intervalSeconds": 86400,
+        "maxOperations": 20
+      }
+    }
+  },
+  "safebox-mariadb": {
+    "scope": "database.mariadb",
+    "governance": {
+      "requiredSignatures": 4,
+      "totalSigners": 5,
+      "authorizedKeys": ["admin1", "admin2", "admin3", "admin4", "admin5"],
+      "exponentialBackoff": true,
+      "rateLimit": {
+        "intervalSeconds": 86400,
+        "maxOperations": 10
+      }
+    }
+  },
+  "safebox-php-fpm": {
+    "scope": "runtime.php",
+    "governance": {
+      "requiredSignatures": 3,
+      "totalSigners": 5,
+      "authorizedKeys": ["admin1", "admin2", "admin3", "admin4", "admin5"],
+      "exponentialBackoff": true,
+      "rateLimit": {
+        "intervalSeconds": 3600,
+        "maxOperations": 20
+      }
+    }
+  },
+  "safebox-node-exec": {
+    "scope": "runtime.node",
+    "governance": {
+      "requiredSignatures": 3,
+      "totalSigners": 5,
+      "authorizedKeys": ["admin1", "admin2", "admin3", "admin4", "admin5"],
+      "exponentialBackoff": true,
+      "rateLimit": {
+        "intervalSeconds": 3600,
+        "maxOperations": 20
+      }
+    }
+  },
+  "safebox-llama-deepseek": {
+    "scope": "models.deepseek",
+    "governance": {
+      "requiredSignatures": 2,
+      "totalSigners": 3,
+      "authorizedKeys": ["admin1", "admin2", "admin3"],
+      "exponentialBackoff": true,
+      "rateLimit": {
+        "intervalSeconds": 3600,
+        "maxOperations": 5
+      }
+    }
+  },
+  "safebox-ffmpeg": {
+    "scope": "media.ffmpeg",
+    "governance": {
+      "requiredSignatures": 2,
+      "totalSigners": 3,
+      "authorizedKeys": ["admin1", "admin2", "admin3"],
+      "exponentialBackoff": false,
+      "rateLimit": {
+        "intervalSeconds": 3600,
+        "maxOperations": 50
+      }
+    }
+  },
+  "safebox-typesense": {
+    "scope": "search.typesense",
+    "governance": {
+      "requiredSignatures": 2,
+      "totalSigners": 3,
+      "authorizedKeys": ["admin1", "admin2", "admin3"],
+      "exponentialBackoff": false,
+      "rateLimit": {
+        "intervalSeconds": 3600,
+        "maxOperations": 10
+      }
+    }
+  },
+  "safebox-chromium": {
+    "scope": "browser.chromium",
+    "governance": {
+      "requiredSignatures": 2,
+      "totalSigners": 3,
+      "authorizedKeys": ["admin1", "admin2", "admin3"],
+      "exponentialBackoff": false,
+      "rateLimit": {
+        "intervalSeconds": 3600,
+        "maxOperations": 10
+      }
+    }
+  },
+  "safebox-system-api": {
+    "scope": "system.admin",
+    "governance": {
+      "requiredSignatures": 5,
+      "totalSigners": 7,
+      "authorizedKeys": ["admin1", "admin2", "admin3", "admin4", "admin5", "admin6", "admin7"],
+      "exponentialBackoff": true,
+      "rateLimit": {
+        "intervalSeconds": 86400,
+        "maxOperations": 5
+      }
+    }
+  }
+}

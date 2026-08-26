@@ -1,0 +1,145 @@
+#!/usr/bin/env node
+'use strict';
+//
+// safebox-models — operator CLI for managing models on a Safebox.
+//
+// Usage:
+//   safebox-models catalog                            List available manifests
+//   safebox-models show <name>                        Show manifest details
+//   safebox-models list                               List installed models
+//   safebox-models install <name>                     Install a model (production)
+//   safebox-models install <name> --local             Install (local mode, no System component)
+//   safebox-models verify <name>                      Verify SHA-256 of installed weights
+//   safebox-models remove <name>                      Uninstall a model
+//   safebox-models doctor                             Diagnose setup issues
+//   safebox-models make-install-manifest <name> <dir> Build an install manifest from staged weights
+//
+// Options (work with any command):
+//   --infrastructure-dir <path>   Path to Infrastructure repo
+//                                 (default: $SAFEBOX_INFRA or /opt/safebox-infrastructure)
+//   --system-url <url>            System component URL
+//                                 (default: $SAFEBOX_SYSTEM_URL or http://127.0.0.1:7780)
+//   --hmac-key-path <path>        HMAC key file
+//                                 (default: $SAFEBOX_HMAC_KEY or /etc/safebox/system.hmac)
+//   --install-manifest <path>     Use this install manifest instead of the bundled one
+//   --local                       Skip the System component; do filesystem ops directly
+//   --json                        Machine-readable output
+//   --yes                         Skip confirmation prompts
+//   --help, -h                    Show this help
+//
+
+const { c, logErr } = require('./lib/util');
+const cmds = require('./commands');
+
+function usage() {
+    process.stdout.write(`safebox-models — operator CLI for managing models on a Safebox
+
+${c.bold('Commands:')}
+  catalog                            List available manifests in the Infrastructure repo
+  show <name>                        Show manifest details
+  list                               List models installed on this Safebox
+  install <name> [--local]           Install a model
+  verify <name>                      Verify SHA-256 of installed weights
+  remove <name>                      Uninstall a model
+  doctor                             Diagnose setup issues
+  make-install-manifest <name> <dir> Build an install manifest from staged weights
+  fetch-install-manifest <name>      Fetch an install manifest from HuggingFace's API
+
+${c.bold('Options:')}
+  --infrastructure-dir <path>   Path to Infrastructure repo
+                                (default: $SAFEBOX_INFRA or /opt/safebox-infrastructure)
+  --system-url <url>            System component URL
+                                (default: $SAFEBOX_SYSTEM_URL or http://127.0.0.1:7780)
+  --hmac-key-path <path>        HMAC key file (default: /etc/safebox/system.hmac)
+  --install-manifest <path>     Use this install manifest instead of the bundled one
+  --huggingface <user/repo>     Override the HF repo for fetch-install-manifest
+  --revision <branch|sha>       HF revision to fetch (default: main)
+  --local                       Skip the System component; do filesystem ops directly
+  --json                        Machine-readable output
+  --yes                         Skip confirmation prompts
+  --help, -h                    Show this help
+
+${c.bold('Examples:')}
+  safebox-models catalog
+  safebox-models show qwen-3-32b
+  safebox-models fetch-install-manifest whisper-large-v3-turbo
+  safebox-models install whisper-large-v3-turbo
+  safebox-models install sdxl-base-1.0 --local --yes
+  safebox-models verify whisper-large-v3-turbo
+  safebox-models doctor
+`);
+}
+
+function parseArgs(argv) {
+    const opts = {};
+    const positional = [];
+    for (let i = 0; i < argv.length; i++) {
+        const a = argv[i];
+        if (a === '--help' || a === '-h')       opts.help = true;
+        else if (a === '--local')               opts.local = true;
+        else if (a === '--yes' || a === '-y')   opts.yes = true;
+        else if (a === '--json')                opts.json = true;
+        else if (a === '--infrastructure-dir')  opts.infrastructureDir = argv[++i];
+        else if (a === '--system-url')          opts.systemUrl = argv[++i];
+        else if (a === '--hmac-key-path')       opts.hmacKeyPath = argv[++i];
+        else if (a === '--install-manifest')    opts.installManifest = argv[++i];
+        else if (a === '--huggingface')         opts.huggingface = argv[++i];
+        else if (a === '--revision')            opts.revision = argv[++i];
+        else if (a.startsWith('--')) {
+            throw new Error(`Unknown flag: ${a}`);
+        } else {
+            positional.push(a);
+        }
+    }
+    return { opts, positional };
+}
+
+async function main() {
+    let parsed;
+    try {
+        parsed = parseArgs(process.argv.slice(2));
+    } catch (e) {
+        logErr(e.message);
+        usage();
+        process.exit(2);
+    }
+
+    const { opts, positional } = parsed;
+
+    if (opts.help || positional.length === 0) {
+        usage();
+        process.exit(positional.length === 0 ? 1 : 0);
+    }
+
+    const sub = positional[0];
+    const subArgs = positional.slice(1);
+
+    const table = {
+        'catalog':                cmds.cmdCatalog,
+        'show':                   cmds.cmdShow,
+        'list':                   cmds.cmdList,
+        'install':                cmds.cmdInstall,
+        'verify':                 cmds.cmdVerify,
+        'remove':                 cmds.cmdRemove,
+        'doctor':                 cmds.cmdDoctor,
+        'make-install-manifest':  cmds.cmdMakeInstallManifest,
+        'fetch-install-manifest': cmds.cmdFetchInstallManifest,
+    };
+
+    const fn = table[sub];
+    if (!fn) {
+        logErr(`Unknown subcommand: ${sub}`);
+        usage();
+        process.exit(2);
+    }
+
+    try {
+        await fn(subArgs, opts);
+    } catch (e) {
+        logErr(e.message);
+        if (process.env.SAFEBOX_DEBUG === '1') console.error(e.stack);
+        process.exit(1);
+    }
+}
+
+main();

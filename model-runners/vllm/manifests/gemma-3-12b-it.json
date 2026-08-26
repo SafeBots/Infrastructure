@@ -1,0 +1,38 @@
+{
+    "name":         "gemma-3-12b-it",
+    "vllmModel":    "google/gemma-3-12b-it",
+    "manifestHash": "",
+    "version":      "3.0",
+    "vendor":       "Google",
+    "license":      "Gemma Terms of Use",
+    "homepage":     "https://huggingface.co/google/gemma-3-12b-it",
+
+    "weights": [],
+
+    "vllm": {
+        "tensorParallelSize":   1,
+        "maxModelLen":          8192,
+        "dtype":                "bfloat16",
+        "quantization":         "",
+        "gpuMemoryUtilization": 0.85,
+        "trustRemoteCode":      false,
+        "enforceEager":         false,
+        "extraFlags":           []
+    },
+
+    "capabilities": {
+        "chat":     true,
+        "complete": true,
+        "embed":    false,
+        "toolUse":  false,
+        "vision":   false
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     24,
+        "recommendedGpu":     "1× T4 16GB (quantized) / 1× L4 24GB (full precision) / Apple Silicon M-series 32GB+",
+        "approximateLoadSec": 20
+    },
+
+    "notes": "12B instruction-tuned. The laptop-friendly entry point — Vicki Boykis demonstrated running agentic loops on a 2022 M2 Mac with 64GB RAM using a similar Gemma model. For laptop deployment use the QAT (quantization-aware-trained) variant via a separate manifest, or run through llama.cpp instead of vLLM."
+}

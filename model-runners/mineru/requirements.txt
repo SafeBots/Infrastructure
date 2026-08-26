@@ -1,0 +1,11 @@
+# MinerU itself (current as of June 2026; pin a version once Safebox AMI baselines)
+mineru[core]>=2.5.0
+
+# FastAPI service stack — matches the convention of other Safebox runners
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+
+# httpx is pulled in by MinerU but we list it for explicit pinning of the
+# version that doesn't break Unix-socket transport
+httpx>=0.26.0

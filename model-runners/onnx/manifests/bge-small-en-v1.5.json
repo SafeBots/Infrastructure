@@ -1,0 +1,21 @@
+{
+    "name":         "bge-small-en-v1.5",
+    "onnxModel":    "BAAI/bge-small-en-v1.5",
+    "manifestHash": "",
+    "version":      "1.5",
+    "vendor":       "BAAI",
+    "license":      "MIT",
+    "homepage":     "https://huggingface.co/BAAI/bge-small-en-v1.5",
+    "task":         "embed",
+    "weights": [],
+    "onnx": { "device": "cpu", "opset": 17 },
+    "capabilities": { "embed": true, "rerank": true, "classify": false, "vision": false },
+    "resources": {
+        "minGpuMemoryGb":     0,
+        "recommendedGpu":     "CPU-only fine; any GPU accelerates batch",
+        "approximateLoadSec": 3,
+        "diskSizeGb":         0.13,
+        "embeddingDim":       384
+    },
+    "notes": "Small, fast English text-embedding model. CPU-viable — the default embedding runner for retrieval/semantic search. Also usable as a lightweight reranker via cosine. For multilingual use bge-m3 (separate manifest)."
+}

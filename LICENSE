@@ -1,0 +1,255 @@
+Safebots Source-Available License
+Version 1.0
+
+Copyright (c) 2026 Safebots Inc ("we", "us", "our", or the "Licensor").
+All rights reserved.
+
+
+WHY THIS LICENSE EXISTS
+-----------------------
+
+This software runs security-critical infrastructure. Its entire value rests on a
+promise: that the system does exactly what it says it does, and nothing else. A
+promise like that is worthless if you have to take our word for it. So we are
+giving you the means to check.
+
+You may read every line of this source code. You may build it yourself. You may
+run it to confirm it behaves as described, and you may reproduce our results
+independently. If our claims are true, you can verify that they are true — from
+the source, without asking us, without trusting us. That transparency is the
+point, and it is why this code is open for you to inspect.
+
+This is not open-source software, and we are honest about the one thing we hold
+back: our patents. We invented the methods this software embodies, and we keep
+the patent rights to them. We use those rights defensively — to stop this work
+from being copied, forked, or reimplemented into a competing product. You are
+free to look, learn, build, and verify. You are not free to take the patented
+inventions and run them in production or ship them in a competing system without
+a separate license from us.
+
+That is the whole bargain, in one sentence: a fully transparent, independently
+verifiable codebase, with the patents reserved so it cannot be turned into a
+competitor. Inspect and verify all you like. Practicing the patented inventions
+takes our permission.
+
+The formal terms follow. Where the plain-language explanation above and the
+formal terms below differ, the formal terms govern.
+
+
+================================================================================
+TERMS AND CONDITIONS
+================================================================================
+
+
+1. DEFINITIONS
+
+"Licensed Work" means the software, source code, configuration, documentation,
+and associated files that we make available under this license in this
+repository, in each version we so release.
+
+"You" (or "Your") means the individual or legal entity exercising rights under
+this license. If you are acting for an organization, "You" includes that
+organization.
+
+"Non-Production Use" means using the Licensed Work for any of the following, and
+nothing beyond them: reading and studying the source code; building and
+compiling it; running it to inspect, test, evaluate, audit, or independently
+verify its behavior or reproduce its results; security research; education and
+teaching; and experimentation and development. Non-Production Use is use to
+LEARN ABOUT and CHECK the Licensed Work — not to operate a live service or
+product for others, and not to process other people's data as part of running a
+business.
+
+"Production Use" means any use that is not Non-Production Use. This includes,
+without limitation: operating the Licensed Work (or anything derived from it) to
+provide a service or product to any third party; using it to process third-party
+data as part of a commercial or operational offering; and using it in, or as
+part of, any product or service that competes with any product or service we
+offer.
+
+"Patent Claims" means any claims of any patent or patent application, now
+existing or later arising, that we own or control, that are or would be
+infringed by making, using, selling, offering to sell, importing, running, or
+otherwise practicing the Licensed Work or any method, technique, or invention it
+embodies.
+
+
+2. WHAT YOU MAY DO (COPYRIGHT LICENSE)
+
+Subject to your compliance with this license, we grant You a worldwide,
+royalty-free, non-exclusive, non-transferable, non-sublicensable copyright
+license to:
+
+  (a) reproduce the Licensed Work and make copies of it;
+  (b) view, study, and analyze its source code;
+  (c) build and compile it;
+  (d) run it for Non-Production Use;
+  (e) create derivative works of it for Non-Production Use; and
+  (f) redistribute the Licensed Work and such derivative works, so long as every
+      copy you distribute (1) includes this entire license unchanged — including
+      the WHY THIS LICENSE EXISTS section and the PATENT RESERVATION in Section
+      4 — and (2) keeps intact all copyright, attribution, and notice text.
+
+This is a COPYRIGHT license only. It grants nothing, and implies nothing, about
+patents. Patents are addressed exclusively in Sections 3 and 4, and those
+sections control over any contrary reading of this one.
+
+
+3. WHAT REQUIRES A SEPARATE LICENSE (PRODUCTION USE)
+
+The rights in Section 2 cover Non-Production Use only. Production Use of the
+Licensed Work is not granted by this license.
+
+If you want to make Production Use of the Licensed Work — to run it in a live
+product or service, to process other people's data with it commercially, or to
+build something that competes with us — you need a separate written license from
+us.
+
+
+4. WHAT WE KEEP (PATENT RESERVATION) — PLEASE READ
+
+NO PATENT LICENSE IS GRANTED. We grant You no license, immunity, covenant not to
+sue, or other right under any Patent Claims — not expressly, and not by
+implication, estoppel, patent exhaustion, or any other legal doctrine. ALL
+PATENT RIGHTS ARE EXPRESSLY RESERVED.
+
+For the avoidance of doubt, and despite anything else in this license or any
+doctrine that might otherwise be argued to apply:
+
+  (a) The copyright permissions in Section 2 do not carry with them, and must
+      not be construed to grant or imply, any license to any Patent Claim. The
+      grant of copyright rights and the reservation of patent rights are
+      independent and intentional.
+
+  (b) Nothing you are permitted to do under this license — including reading,
+      building, running for Non-Production Use, verifying, reproducing, or
+      redistributing the Licensed Work — gives you any right to practice any
+      invention covered by our Patent Claims. We do not waive those claims, and
+      we expressly preserve every right to enforce them against any practice of
+      the inventions that we have not separately licensed in writing.
+
+  (c) Without limiting the above, you receive no right to make Production Use of
+      any patented method embodied in the Licensed Work, and no right to
+      reimplement, reproduce, port, or deploy any such patented method in any
+      product or service — whether or not you use our source code to do it —
+      except under a separate written patent license from us.
+
+  (d) We may grant patent licenses separately, to whom we choose and on terms we
+      choose, entirely at our discretion. The absence of such a separate grant
+      leaves all Patent Claims fully in force and fully enforceable.
+
+This license does not convert to an open-source or any more permissive license,
+and does not expire or change, after any period of time or on any event. Our
+copyright and patent rights stay reserved unless and until we expressly grant
+otherwise in a separate signed writing.
+
+
+5. WHAT THIS LICENSE DOES NOT GIVE YOU
+
+  (a) No trademark rights. This license grants no right in our names, logos, or
+      trademarks. You may use them only as reasonably necessary to describe the
+      origin of the Licensed Work accurately (nominative use).
+
+  (b) No rights in third-party components except as their own licenses provide.
+      The Licensed Work includes or relies on third-party components under their
+      own licenses. Those licenses govern those components — see THIRD-PARTY
+      NOTICES below.
+
+  (c) No warranty and no support. See Sections 7 and 8.
+
+
+6. IF YOU BREAK THESE TERMS (TERMINATION)
+
+If you use the Licensed Work in any way this license does not permit, your rights
+under this license end automatically — for every version of the Licensed Work,
+not just the copy you misused. Reinstatement, if any, is at our discretion.
+
+Sections 1, 4, 5, 7, and 8 survive termination, along with any provision that by
+its nature should survive.
+
+
+7. NO WARRANTY
+
+To the fullest extent permitted by law, the Licensed Work is provided "AS IS" and
+"AS AVAILABLE," without warranties or conditions of any kind, whether express,
+implied, or statutory, including without limitation any implied warranties of
+merchantability, fitness for a particular purpose, title, accuracy, or
+non-infringement. You bear the entire risk of using the Licensed Work.
+
+
+8. LIMITATION OF LIABILITY
+
+To the fullest extent permitted by law, in no event will we be liable to you for
+any direct, indirect, incidental, special, exemplary, punitive, or consequential
+damages, or for any lost profits, lost data, or business interruption, arising
+out of or relating to this license or the Licensed Work, under any theory of
+liability, even if we have been advised of the possibility of such damages.
+
+
+9. GENERAL
+
+  (a) Entire understanding. This license is the entire agreement between you and
+      us regarding the Licensed Work under it, and replaces any prior
+      understanding on that subject.
+
+  (b) No waiver. Our failure to enforce any provision is not a waiver of it.
+
+  (c) Severability. If any provision is held unenforceable, the rest remains in
+      effect, and the unenforceable provision is limited only to the minimum
+      extent necessary — with particular intent that the PATENT RESERVATION in
+      Section 4 be given the maximum effect the law allows.
+
+  (d) No implied licenses. Except for the copyright rights expressly granted in
+      Section 2, no rights are granted by implication or otherwise. All rights
+      not expressly granted are reserved.
+
+
+================================================================================
+THIRD-PARTY NOTICES
+
+The notices below govern third-party components only, NOT the Licensed Work, and
+are preserved from the prior LICENSE. Nothing in the license above modifies them;
+where any third-party license grants rights the license above does not, that
+third-party license controls for that component.
+
+NOTICE: AI Model Licenses
+
+This project integrates AI models with various open-source licenses:
+
+- Apache 2.0: Qwen models, Gemma 4 models, Mistral models, and others
+- MIT: GLM-5.1, DeepSeek V3.2, Phi models, and others
+- Llama Community License: Llama 4 models (700M MAU restriction)
+- Gemma Terms of Use: Gemma models
+- Custom permissive licenses: Various model-specific licenses
+
+See docs/LICENSE-MODELS.md for complete model license information.
+
+---
+
+NOTICE: Media Tools and Libraries
+
+This project uses media processing tools with LGPL 2.1+ licenses
+via dynamic linking only:
+
+- FFmpeg (LGPL 2.1+, no GPL codecs)
+- libvips (LGPL 2.1+)
+- ImageMagick (Apache-style license, no GPL delegates)
+- PDFium (BSD-3-Clause)
+- LibreOffice (MPL 2.0)
+
+See docs/LICENSE-MEDIA.md for complete media toolchain license information.
+
+---
+
+NOTICE: GPL-Free Guarantee
+
+All runtime components use permissive licenses. No GPL dependencies
+are included in the runtime execution path.
+
+Flagged components (optional):
+- diffusion-small: AGPL (Stable Diffusion)
+- index: SSPL (FalkorDB)
+
+These components are clearly flagged and are optional add-ons.
+
+================================================================================

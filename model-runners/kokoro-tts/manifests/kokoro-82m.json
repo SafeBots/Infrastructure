@@ -1,0 +1,43 @@
+{
+    "name":              "kokoro-82m",
+    "manifestHash":      "",
+    "version":           "0.19",
+    "vendor":            "hexgrad",
+    "license":           "Apache-2.0 (free for personal and commercial use)",
+    "homepage":          "https://huggingface.co/hexgrad/Kokoro-82M",
+
+    "kokoro": {
+        "langCode":      "a",
+        "defaultVoice":  "af_heart",
+        "defaultSpeed":  1.0,
+        "defaultFormat": "wav",
+        "sampleRate":    24000
+    },
+
+    "capabilities": {
+        "speech":      true,
+        "voiceClone":  false,
+        "emotion":     false,
+        "streaming":   true,
+        "languages":   ["en-US", "en-GB"]
+    },
+
+    "voices": [
+        "af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica",
+        "af_kore",  "af_nicole", "af_nova",  "af_river", "af_sarah", "af_sky",
+        "am_adam",  "am_echo",   "am_eric",  "am_fenrir", "am_liam",
+        "am_michael", "am_onyx", "am_puck",  "am_santa",
+        "bf_alice", "bf_emma",   "bf_isabella", "bf_lily",
+        "bm_daniel", "bm_fable", "bm_george",   "bm_lewis"
+    ],
+
+    "resources": {
+        "minGpuMemoryGb":     0,
+        "recommendedGpu":     "CPU works (any 4-core x86_64 or Apple Silicon) — 1× T4 16GB for ~210x RTF",
+        "approximateLoadSec": 10,
+        "diskSizeGb":         0.35,
+        "realTimeFactorTypical": "~5-15x on CPU; ~80-210x on consumer GPU"
+    },
+
+    "notes": "82M-parameter open-source TTS, Apache 2.0, no commercial restrictions. Bundles ~28 voices across American/British × female/male × multiple personality presets. The right default for Safebox tenants: small enough to run on any laptop or CPU-only VM, fast enough on consumer GPU for production volume. Pronunciation handled by espeak-ng — system dependency required."
+}

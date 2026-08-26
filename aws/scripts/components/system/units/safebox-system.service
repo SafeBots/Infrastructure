@@ -1,0 +1,63 @@
+[Unit]
+Description=Safebox System Component (HMAC-authenticated JSON API over per-container Unix sockets)
+Documentation=file:///opt/safebox/manifests/system.json
+After=network-online.target docker.service zfs-mount.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=safebox-infra
+Group=safebox-infra
+
+ExecStart=/usr/bin/node /opt/safebox/system/server.js
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+# Resource bounds
+# MemoryMax bumped from 512M to 4G because the embeddings worker subprocess
+# loads models (typically 100MB-2GB each) into the same cgroup. Default
+# embeddings budget is 2GB, so 4G gives headroom for several loaded models
+# plus the System component itself plus ONNX Runtime overhead.
+MemoryMax=4G
+TasksMax=400
+LimitNOFILE=4096
+
+# Runtime directory for sockets. systemd creates /run/safebox at start and
+# removes it at stop. safebox-infra owns it; the System component creates
+# subdirectories and socket files at runtime as needed.
+RuntimeDirectory=safebox safebox/containers
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=no
+
+# Hardening — the system component itself is unprivileged. Privileged ops go via sudo
+# against an allowlist (see /etc/sudoers.d/safebox-system).
+NoNewPrivileges=false   # sudo needs to elevate; can't be no-new-privs
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=false  # sudo is setuid
+SystemCallArchitectures=native
+LockPersonality=true
+# AF_UNIX for our listeners; AF_INET/AF_INET6 still allowed so sudo'd children
+# (dnf, docker exec doing HTTPS downloads) can reach the network. We can
+# constrain further (drop AF_INET for the System component itself) once we
+# confirm none of our direct syscalls need TCP.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+ReadOnlyPaths=/opt/safebox/system /srv/safebox/models
+ReadWritePaths=/srv/zfs-clones /etc/safebox /run/safebox
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=safebox-system
+
+[Install]
+WantedBy=multi-user.target

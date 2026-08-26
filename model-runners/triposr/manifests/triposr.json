@@ -1,0 +1,35 @@
+{
+    "name":              "triposr",
+    "manifestHash":      "",
+    "version":           "1.0",
+    "vendor":            "Stability AI + Tripo AI",
+    "license":           "MIT (free for personal and commercial use)",
+    "homepage":          "https://huggingface.co/stabilityai/TripoSR",
+
+    "triposr": {
+        "huggingfaceModel":        "stabilityai/TripoSR",
+        "defaultForegroundRatio":  0.85,
+        "defaultMeshResolution":   256,
+        "defaultFormat":           "glb",
+        "defaultRemoveBackground": true
+    },
+
+    "capabilities": {
+        "image2mesh":   true,
+        "text2mesh":    false,
+        "pbrTextures":  false,
+        "vertexColors": true,
+        "streaming":    false,
+        "outputFormats": ["glb", "obj", "ply"]
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     6,
+        "recommendedGpu":     "1× RTX 3060 12GB / 1× T4 16GB / Apple Silicon (slower)",
+        "approximateLoadSec": 60,
+        "diskSizeGb":         2,
+        "meshSecondsTypical": "~0.5-1.5s per mesh on consumer GPU; ~15-30s on CPU"
+    },
+
+    "notes": "Single-image feed-forward 3D reconstruction. Takes one image (any angle of any object), produces a textured 3D mesh in under a second on a consumer GPU. Output meshes have vertex colors only, not PBR materials — for production game/AR assets that need albedo/normal/roughness/metallic maps, use Hunyuan3D 2.1 instead (separate runner, post-1.0). MIT license means commercial use is unrestricted. Background removal via rembg is on by default; turn off with removeBackground:false if your input is already cleanly composited."
+}

@@ -1,0 +1,48 @@
+{
+    "name":              "ltx-2-3-distilled",
+    "manifestHash":      "",
+    "version":           "2.3",
+    "vendor":            "Lightricks",
+    "license":           "Apache-2.0 (free for personal and commercial use)",
+    "homepage":          "https://huggingface.co/Lightricks/LTX-Video",
+
+    "ltxVideo": {
+        "huggingfaceModel": "Lightricks/LTX-Video",
+        "variant":          "distilled",
+        "defaultWidth":     768,
+        "defaultHeight":    512,
+        "defaultNumFrames": 121,
+        "defaultFps":       24,
+        "defaultSteps":     8,
+        "defaultGuidance":  3.5,
+        "maxNumFrames":     481
+    },
+
+    "capabilities": {
+        "text2video":   true,
+        "image2video":  true,
+        "video2video":  false,
+        "audio":        true,
+        "streaming":    false,
+        "outputFormats": ["mp4"]
+    },
+
+    "audio": {
+        "supported":          true,
+        "defaultModalityScale": 3.0,
+        "sampleRate":         44100,
+        "channels":           2,
+        "codec":              "aac",
+        "notes":              "LTX-2.3 generates synchronized audio in the same forward pass as the video. Best for ambient sound, foley, and environmental effects — not for music or voice. For music or human speech, use stable-audio-3 or kokoro-tts respectively."
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     16,
+        "recommendedGpu":     "1× RTX 4090 24GB (real-time) / 1× RTX 4070 Ti 16GB (acceptable) / 1× A10 24GB",
+        "approximateLoadSec": 60,
+        "diskSizeGb":         24,
+        "videoSecondsTypical": "~20-40s per 5s clip (121 frames @ 24fps) on RTX 4090; ~60-120s on RTX 4070 Ti"
+    },
+
+    "notes": "Distilled variant of LTX-2.3 (released March 2026, 22B-parameter base, ~8B distilled). The right Safebox default for video — Apache 2.0 means commercial use without license drama, 16GB VRAM minimum fits on consumer cards, and 8-step inference makes iteration fast enough for actual workflow use. Text-to-video, image-to-video, AND synchronized audio (LTX-2.3 generates audio in the same forward pass as video — best for ambient sound and foley, not for music). Dimensions must be divisible by 32 (the runner clamps automatically). Frame counts of the form 8k+1 (the runner rounds automatically)."
+}

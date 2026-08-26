@@ -1,0 +1,38 @@
+{
+    "name":         "orpheus-3b",
+    "manifestHash": "",
+    "version":      "0.1-ft",
+    "vendor":       "Canopy AI (canopylabs)",
+    "license":      "Apache-2.0",
+    "licenseNote":  "COMMERCIAL-OK. Apache-2.0 — commercial serving and redistribution both clear with no separate license.",
+    "homepage":     "https://huggingface.co/canopylabs/orpheus-3b-0.1-ft",
+    "gitRevision":  "PIN_ME_verify_on_hf",
+    "weights": [
+        {
+            "file":   "CAPTURE_from_index_at_build.safetensors",
+            "bytes":  0,
+            "sha256": "CAPTURE_FROM_HF_AT_PINNED_REV",
+            "cid":    "ADD_AFTER_IPFS_PIN",
+            "note":   "Llama-3-based Speech-LLM, 3B. Capture per-shard SHA-256 from model.safetensors.index.json at the pinned revision at build.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/orpheus-3b/",
+                "https://huggingface.co/canopylabs/orpheus-3b-0.1-ft/resolve/PIN_ME_verify_on_hf/"
+            ]
+        }
+    ],
+    "capabilities": {
+        "speech":     true,
+        "voiceClone": true,
+        "emotion":    true,
+        "streaming":  true,
+        "emotionTags": true,
+        "languages":  ["en-US"]
+    },
+    "resources": {
+        "minGpuMemoryGb":     10,
+        "recommendedGpu":     "1x GPU (~12-16GB) for the 3B. Also released in 1B / 400M / 150M sizes for lighter deployments — add as separate manifests if needed.",
+        "approximateLoadSec": 40
+    },
+    "notes": "Orpheus (Canopy AI), Apache-2.0, Llama-based Speech-LLM. The commercial-safe EXPRESSIVE/emotional pick: guided emotion via tags, zero-shot cloning, ~200ms streaming (->~100ms with input streaming). Because it is Llama-architecture it fits an LLM-style serving stack (vLLM/SGLang) cleanly. Multilingual research variants exist (zh/hi/ko/es) — verify their license separately, the base English 3B is the Apache one. 4 sizes available (150M-3B) — pick per hardware."
+}

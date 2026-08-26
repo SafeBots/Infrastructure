@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+# torch and stable-audio-tools added in 1.1 when the inference loop is wired:
+# torch==2.5.0
+# stable-audio-tools @ git+https://github.com/Stability-AI/stable-audio-tools@<pinned-sha>
+# Also add: safetensors, transformers (for T5Gemma)

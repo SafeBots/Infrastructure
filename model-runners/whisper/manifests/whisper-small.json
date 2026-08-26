@@ -1,0 +1,35 @@
+{
+    "name":                 "whisper-small",
+    "fasterWhisperModel":   "small",
+    "manifestHash":         "",
+    "version":              "v2",
+    "vendor":               "OpenAI",
+    "license":              "MIT",
+    "homepage":             "https://huggingface.co/openai/whisper-small",
+
+    "whisper": {
+        "device":            "cpu",
+        "computeType":       "int8",
+        "numWorkers":        1,
+        "cpuThreads":        4
+    },
+
+    "capabilities": {
+        "transcribe":      true,
+        "translate":       true,
+        "diarize":         false,
+        "wordTimestamps":  true,
+        "vadFilter":       true,
+        "batch":           true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     0,
+        "recommendedGpu":     "CPU-only: 4-8 core x86_64 or Apple Silicon M-series",
+        "approximateLoadSec": 5,
+        "diskSizeGb":         0.5,
+        "realTimeFactor":     "~1-2x on 8-core CPU at int8"
+    },
+
+    "notes": "244M params. CPU-friendly default. Lower accuracy than medium and above but usable on any laptop or VM without a GPU. For Safebox tenants without dedicated inference hardware, this is the fallback transcription option."
+}

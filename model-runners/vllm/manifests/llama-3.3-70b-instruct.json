@@ -1,0 +1,38 @@
+{
+    "name":         "llama-3.3-70b-instruct",
+    "vllmModel":    "meta-llama/Llama-3.3-70B-Instruct",
+    "manifestHash": "",
+    "version":      "3.3.0",
+    "vendor":       "Meta",
+    "license":      "Llama-3.3-Community",
+    "homepage":     "https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct",
+
+    "weights": [],
+
+    "vllm": {
+        "tensorParallelSize":   2,
+        "maxModelLen":          131072,
+        "dtype":                "bfloat16",
+        "quantization":         "",
+        "gpuMemoryUtilization": 0.92,
+        "trustRemoteCode":      false,
+        "enforceEager":         false,
+        "extraFlags":           []
+    },
+
+    "capabilities": {
+        "chat":     true,
+        "complete": true,
+        "embed":    false,
+        "toolUse":  true,
+        "vision":   false
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     160,
+        "recommendedGpu":     "2× NVIDIA A100 80GB (or 1× H100 80GB with quantization)",
+        "approximateLoadSec": 90
+    },
+
+    "notes": "Dense 70B with 128K context. Strong general-purpose model with native tool-use support. For single-GPU deployment use AWQ or GPTQ quantization variant (separate manifest)."
+}

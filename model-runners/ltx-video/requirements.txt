@@ -1,0 +1,21 @@
+# LTX-Video — Apache 2.0
+# Either the upstream library or the Diffusers integration; the runner
+# tries both at import time.
+ltx-video>=0.4.0
+diffusers>=0.32.0
+transformers>=4.45
+sentencepiece
+accelerate
+
+# PyTorch (CUDA build pinned by the base image at build time)
+torch>=2.4
+torchvision>=0.19
+
+# Image handling
+Pillow>=10
+numpy>=1.24
+
+# Safebox FastAPI service stack
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0

@@ -1,0 +1,13 @@
+# Stable-audio-tools — Apache 2.0, the upstream library from Stability AI
+stable-audio-tools>=0.0.16
+torch>=2.1
+torchaudio>=2.1
+
+# Audio handling
+numpy>=1.24
+soundfile>=0.12
+
+# Safebox FastAPI service stack
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0

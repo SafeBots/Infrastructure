@@ -1,0 +1,62 @@
+#include <tunables/global>
+
+# Safebox runner confinement. Attach per-service via
+# security_opt: [ "apparmor=safebox-runner" ].
+# Confines a compromised runner to its own workspace; denies host key material,
+# other services' data, kernel module ops, mount, ptrace, and raw sockets.
+profile safebox-runner flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/ssl_certs>
+
+  network inet stream,
+  network inet6 stream,
+  network unix stream,
+  # No raw/packet sockets — a confined runner cannot craft raw packets.
+  deny network raw,
+  deny network packet,
+
+  # Executables + libs the runtime needs (read/exec only).
+  /usr/bin/** rix,
+  /usr/local/bin/** rix,
+  /bin/** rix,
+  /lib/** mr,
+  /usr/lib/** mr,
+  /usr/local/lib/** mr,
+
+  # Own application code — read only.
+  /app/ r,
+  /app/** r,
+
+  # Writable scratch + output only.
+  /tmp/ rw,
+  /tmp/** rwk,
+  /cache/ rw,
+  /cache/** rwk,
+  /data/ rw,
+  /data/** rwk,
+  /output/ rw,
+  /output/** rwk,
+
+  # Proc/sys — allow own status, deny the rest broadly.
+  @{PROC}/sys/kernel/random/uuid r,
+  owner @{PROC}/@{pid}/** r,
+  deny @{PROC}/sys/** wklx,
+  deny @{PROC}/@{pid}/mem rwklx,
+  deny /sys/** wklx,
+
+  # Hard denials — the crux of the confinement.
+  deny /etc/safebox/** rwklx,          # host key material — never
+  deny /run/secrets/** wl,             # secrets are read-only, no write/link
+  deny /var/run/docker.sock rwklx,     # no docker socket for runners
+  deny mount,
+  deny umount,
+  deny pivot_root,
+  deny ptrace,
+  deny /sys/kernel/security/** rwklx,
+  deny capability sys_module,
+  deny capability sys_admin,
+  deny capability sys_ptrace,
+  deny capability dac_read_search,
+  deny capability dac_override,
+}

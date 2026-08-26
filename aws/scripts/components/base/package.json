@@ -1,0 +1,36 @@
+{
+    "name":         "safebox-base",
+    "version":      "1.0.0",
+    "description":  "Base npm packages for the Safebox AMI runtime — document generation, image processing, archival, email, data transformation. Locked via package-lock.json with integrity hashes verified at install time by `npm ci --ignore-scripts`.",
+    "private":      true,
+    "license":      "Apache-2.0",
+    "engines": {
+        "node": ">=20.18.0 <21.0.0",
+        "npm":  ">=10.8.0 <11.0.0"
+    },
+    "dependencies": {
+        "docx":        "8.5.0",
+        "exceljs":     "4.4.0",
+        "xlsx":        "0.18.5",
+        "pptxgenjs":   "3.12.0",
+        "pdfkit":      "0.14.0",
+        "pdf-lib":     "1.17.1",
+        "jspdf":       "2.5.1",
+        "sharp":       "0.33.5",
+        "jimp":        "0.22.12",
+        "canvas":      "2.11.2",
+        "qrcode":      "1.5.4",
+        "archiver":    "7.0.1",
+        "adm-zip":     "0.5.16",
+        "nodemailer":  "6.9.15",
+        "mjml":        "4.15.3",
+        "papaparse":   "5.4.1",
+        "json2csv":    "6.0.0-alpha.2",
+        "lodash":      "4.17.21",
+        "moment":      "2.30.1",
+        "uuid":        "10.0.0"
+    },
+    "scripts": {
+        "preinstall":  "echo 'Do not run npm install on this package — use `npm ci --ignore-scripts` only. Lifecycle scripts are disabled to prevent supply chain attacks (e.g. TanStack May 2025).' && exit 0"
+    }
+}

@@ -1,0 +1,38 @@
+{
+    "name":         "qwen-3-32b",
+    "vllmModel":    "Qwen/Qwen3-32B",
+    "manifestHash": "",
+    "version":      "3.0.0",
+    "vendor":       "Alibaba",
+    "license":      "Apache-2.0",
+    "homepage":     "https://huggingface.co/Qwen/Qwen3-32B",
+
+    "weights": [],
+
+    "vllm": {
+        "tensorParallelSize":   1,
+        "maxModelLen":          32768,
+        "dtype":                "bfloat16",
+        "quantization":         "",
+        "gpuMemoryUtilization": 0.9,
+        "trustRemoteCode":      false,
+        "enforceEager":         false,
+        "extraFlags":           []
+    },
+
+    "capabilities": {
+        "chat":     true,
+        "complete": true,
+        "embed":    false,
+        "toolUse":  true,
+        "vision":   false
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     80,
+        "recommendedGpu":     "1× NVIDIA A100 80GB or 1× H100 80GB",
+        "approximateLoadSec": 45
+    },
+
+    "notes": "Dense 32B with strong bilingual EN/ZH performance. Native tool-use. Excellent default for general-purpose chat at single-GPU footprint."
+}

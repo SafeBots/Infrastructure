@@ -1,0 +1,8 @@
+# Chatterbox TTS runner deps. Pin exact versions at build (digest-pinned image).
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+numpy>=1.26
+torch>=2.2            # CUDA build in the GPU image; CPU wheel otherwise
+chatterbox-tts>=0.1   # Resemble AI Chatterbox (MIT) — provides chatterbox.tts.ChatterboxTTS
+soundfile>=0.12

@@ -1,0 +1,35 @@
+{
+    "name":                 "distil-whisper-large-v3",
+    "fasterWhisperModel":   "distil-large-v3",
+    "manifestHash":         "",
+    "version":              "v3",
+    "vendor":               "Hugging Face (distilled from OpenAI Whisper)",
+    "license":              "MIT",
+    "homepage":             "https://huggingface.co/distil-whisper/distil-large-v3",
+
+    "whisper": {
+        "device":            "cuda",
+        "computeType":       "float16",
+        "numWorkers":        1,
+        "cpuThreads":        0
+    },
+
+    "capabilities": {
+        "transcribe":      true,
+        "translate":       false,
+        "diarize":         false,
+        "wordTimestamps":  true,
+        "vadFilter":       true,
+        "batch":           true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     2,
+        "recommendedGpu":     "1× T4 16GB / 1× RTX 3060 / Apple Silicon",
+        "approximateLoadSec": 12,
+        "diskSizeGb":         1.5,
+        "realTimeFactor":     "~6x on consumer GPU, ~10x batched"
+    },
+
+    "notes": "English-focused distillation of large-v3 from Hugging Face. Slightly faster than large-v3-turbo on English with comparable accuracy. Pick this when the workload is English-only and throughput matters; pick whisper-large-v3-turbo for multilingual workloads."
+}

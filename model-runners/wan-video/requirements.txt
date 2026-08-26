@@ -1,0 +1,20 @@
+# Wan 2.2 — Apache 2.0, Alibaba's MoE video diffusion model.
+# Requires the diffusers main branch as of mid-2026 (the Wan integration
+# was added July 2025 and ships in PyPI from diffusers >= 0.33).
+diffusers>=0.33
+transformers>=4.45
+sentencepiece
+accelerate
+ftfy
+safetensors
+
+torch>=2.4
+torchvision>=0.19
+
+Pillow>=10
+numpy>=1.24
+
+# Safebox FastAPI stack
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0

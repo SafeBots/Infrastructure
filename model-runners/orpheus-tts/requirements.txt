@@ -1,0 +1,13 @@
+# Orpheus / Higgs-v2 runner deps. Pin exact versions at build.
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+numpy>=1.26
+torch>=2.2
+transformers>=4.44
+soundfile>=0.12
+# Native inference packages (optional but recommended for real audio output):
+#   orpheus-tts        — Canopy AI Orpheus inference wrapper
+#   boson-multimodal   — Higgs Audio v2 serve engine
+# Install whichever family this image serves; the runner raises a clear error
+# if neither native path nor a vLLM-Omni endpoint is available.

@@ -1,0 +1,54 @@
+[Unit]
+Description=Safebox DNS Client (attestation-signed IP announce)
+Documentation=https://github.com/safebots/safebox/blob/main/aws/scripts/components/dnsclient/README.md
+After=network-online.target
+Wants=network-online.target
+# We don't strictly need safebox-system to be up for dnsclient to work,
+# but starting after it keeps logs clean during reboot.
+After=safebox-system.service
+
+[Service]
+Type=simple
+User=safebox-infra
+Group=safebox-infra
+ExecStart=/usr/bin/node /opt/safebox/dnsclient/dnsclient.js
+Restart=on-failure
+RestartSec=10s
+# State directory: /var/lib/safebox/dnsclient/state.json
+StateDirectory=safebox/dnsclient
+StateDirectoryMode=0750
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Resource caps. The dnsclient process is tiny — a few MB of RSS in
+# steady state.
+MemoryMax=128M
+TasksMax=32
+
+# Bind only what dnsclient needs to write. /etc/safebox/dnsclient.json is
+# read-only at runtime (it's set up once by cloud-init).
+ReadOnlyPaths=/etc/safebox
+ReadWritePaths=/var/lib/safebox/dnsclient
+
+# Networking: needs egress to dns-api endpoint plus IMDS. We let the kernel
+# routing handle it; no further network namespacing here.
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+{
+    "name": "kimi-linear-48b",
+    "vllmModel": "moonshotai/Kimi-Linear-48B-A3B-Instruct",
+    "manifestHash": "",
+    "version": "linear-48b-a3b",
+    "vendor": "Moonshot AI (Beijing)",
+    "license": "VERIFY checkpoint license \u2014 the paper (arXiv:2510.26692) is CC-BY-NC-ND, but the CHECKPOINT license is separate (K3 family was Modified MIT). Confirm commercial/inference-resale terms before Safebux-metered serving.",
+    "homepage": "https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct",
+    "gitRevision": "806a95e",
+    "weights": [
+        {
+            "file": "model-NNNNN-of-00020.safetensors",
+            "bytes": 0,
+            "sha256": "CAPTURE_FROM_INDEX_AT_BUILD",
+            "cid": "ADD_AFTER_IPFS_PIN",
+            "note": "20 shards. Capture per-shard SHA-256 from /resolve/806a95e/model.safetensors.index.json at build (resolve-model-hashes.sh).",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/kimi-linear-48b/",
+                "https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/resolve/806a95e/"
+            ]
+        }
+    ],
+    "vllm": {
+        "tensorParallelSize": 4,
+        "maxModelLen": 1048576,
+        "dtype": "bfloat16",
+        "quantization": "",
+        "gpuMemoryUtilization": 0.9,
+        "trustRemoteCode": true,
+        "enforceEager": false,
+        "extraFlags": [
+            "--enable-prefix-caching"
+        ]
+    },
+    "capabilities": {
+        "chat": true,
+        "complete": true,
+        "embed": false,
+        "toolUse": true,
+        "vision": false
+    },
+    "resources": {
+        "minGpuMemoryGb": 384,
+        "recommendedGpu": "4\u00d7 H100 80GB (Moonshot's reference cmd: --tensor-parallel-size 4). NOT single-GPU. 98.3GB in 20 safetensors shards.",
+        "approximateLoadSec": 90
+    },
+    "notes": "Hybrid linear-attention LLM (Kimi Delta Attention, arXiv:2510.26692). 48B total / ~3B active, 98.3GB/20 shards, released ~Nov 2025. Moonshot's reference vLLM cmd uses --tensor-parallel-size 4 (\u22484 GPUs), so NOT the single-GPU model first assumed \u2014 still far lighter than K3. KDA cuts KV-cache ~75% and lifts long-context decode throughput (vendor-reported; verify). A GGUF quant (bartowski/moonshotai_Kimi-Linear-48B-A3B-Instruct-GGUF) can run on the llama.cpp runner instead. THREE gates: (1) VERIFY checkpoint license (paper arXiv:2510.26692 is CC-BY-NC-ND; checkpoint license separate). (2) trustRemoteCode=true ships a custom KDA CUDA kernel \u2014 pin gitRevision 806a95e and REVIEW the kernel. (3) Beijing-origin \u2014 tenant inference OK, NOT an auditor concordance voter."
+}

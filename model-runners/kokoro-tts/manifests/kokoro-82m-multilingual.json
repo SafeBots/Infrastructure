@@ -1,0 +1,45 @@
+{
+    "name":              "kokoro-82m-multilingual",
+    "manifestHash":      "",
+    "version":           "0.19",
+    "vendor":            "hexgrad",
+    "license":           "Apache-2.0",
+    "homepage":          "https://huggingface.co/hexgrad/Kokoro-82M",
+
+    "kokoro": {
+        "langCode":      "j",
+        "defaultVoice":  "jf_alpha",
+        "defaultSpeed":  1.0,
+        "defaultFormat": "wav",
+        "sampleRate":    24000
+    },
+
+    "capabilities": {
+        "speech":      true,
+        "voiceClone":  false,
+        "emotion":     false,
+        "streaming":   true,
+        "languages":   ["ja-JP", "zh-CN", "fr-FR", "hi-IN", "it-IT", "pt-BR"]
+    },
+
+    "voices": [
+        "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro",
+        "jm_kumo",
+        "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+        "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+        "ff_siwis",
+        "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+        "if_sara", "im_nicola",
+        "pf_dora", "pm_alex", "pm_santa"
+    ],
+
+    "resources": {
+        "minGpuMemoryGb":     0,
+        "recommendedGpu":     "CPU OK; 1× T4 / RTX 3060 for production throughput",
+        "approximateLoadSec": 15,
+        "diskSizeGb":         0.6,
+        "realTimeFactorTypical": "~3-8x on CPU; ~50-150x on consumer GPU"
+    },
+
+    "notes": "Same Kokoro 82M weights with the multilingual phoneme path. Set langCode at startup to pick the language family: 'j' for Japanese, 'z' for Mandarin, 'f' for French, 'h' for Hindi, 'i' for Italian, 'p' for Portuguese (BR). Run multiple containers for multiple language families. Voice IDs are namespaced by language (jf_, zm_, etc.)."
+}

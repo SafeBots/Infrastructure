@@ -1,0 +1,20 @@
+{
+    "name":         "bge-reranker-base",
+    "onnxModel":    "BAAI/bge-reranker-base",
+    "manifestHash": "",
+    "version":      "base",
+    "vendor":       "BAAI",
+    "license":      "MIT",
+    "homepage":     "https://huggingface.co/BAAI/bge-reranker-base",
+    "task":         "rerank",
+    "weights": [],
+    "onnx": { "device": "cpu", "opset": 17 },
+    "capabilities": { "embed": false, "rerank": true, "classify": false, "vision": false },
+    "resources": {
+        "minGpuMemoryGb":     0,
+        "recommendedGpu":     "CPU-viable; GPU for high query volume",
+        "approximateLoadSec": 4,
+        "diskSizeGb":         1.1
+    },
+    "notes": "Cross-encoder reranker — scores (query, document) pairs directly, more accurate than embedding cosine for reordering retrieval results. Pairs with bge-small-en-v1.5: embed to retrieve, rerank to reorder the top-N."
+}

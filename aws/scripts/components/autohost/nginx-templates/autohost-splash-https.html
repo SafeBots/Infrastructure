@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>HTTPS not ready — Safebox</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1f1f24;
+    color: #e8e6e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    max-width: 520px;
+    background: #25252c;
+    border: 1px solid #3a3a44;
+    border-radius: 16px;
+    padding: 36px 32px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  p { margin-bottom: 14px; color: #d8d8e0; }
+  a {
+    color: #E8A020;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  a:hover { text-decoration: underline; }
+  .small { color: #888; font-size: 14px; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>HTTPS is being configured</h1>
+  <p>This hostname's TLS certificate has not been issued yet. You reached this page via HTTPS, which is why your browser warned about the certificate.</p>
+  <p>Provisioning has been triggered. To see the setup progress, open the same address over plain HTTP — it works without the warning.</p>
+  <p class="small">Or wait about a minute and reload. Once provisioning completes, this hostname will serve a real certificate and the warning will go away.</p>
+</div>
+</body>
+</html>

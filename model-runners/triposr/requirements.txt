@@ -1,0 +1,21 @@
+# TripoSR — MIT license, image to 3D mesh in ~1 second on consumer GPU.
+# The package is published as `tsr` on PyPI (the GitHub repo is TripoSR).
+tsr>=0.0.5
+torch>=2.0
+torchvision>=0.15
+
+# Mesh handling and export (GLB / OBJ / PLY)
+trimesh>=4.0
+xatlas
+einops
+omegaconf
+
+# Image handling, optional background removal
+Pillow>=10
+rembg>=2.0
+numpy>=1.24
+
+# Safebox FastAPI stack
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0

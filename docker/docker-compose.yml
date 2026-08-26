@@ -1,0 +1,185 @@
+# Safebox container tier (category-2). NixOS v2.
+# F1/F3: core nginx/mariadb/php are HOST services (measured base), not here.
+# F4: every image pinned by @sha256 digest (app-verify fails closed otherwise).
+#     Digest placeholders (the @sha256 REPLACE... values) are resolved at build:
+#       run ../resolve-digests.sh  (one command resolves them all).
+#
+# MODEL RUNNERS ARE NOT HERE. They are launched DYNAMICALLY by the system
+# component (POST /models/install -> POST /system start -> docker run) with
+# M-of-N-governed, SHA-256-verified weights. See model-runners/ (the real,
+# governed model architecture: vllm, whisper, comfyui, kokoro-tts,
+# stable-audio-3, ltx-video, wan-video, triposr, mineru, privacy-filter).
+# Kimi K3 and Nemotron Omni/Super/Ultra are NEW MANIFESTS for the existing
+# model-runners/vllm runner — not new static services.
+#
+# This file holds only the ALWAYS-ON support tier: the app sandbox, search,
+# media tools, browser, and the system protocol API.
+
+version: '3.8'
+networks:
+  safebox-net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 172.20.0.0/16
+services:
+  node-exec:
+    image: node@sha256:REPLACE_WITH_REAL_DIGEST_node20alpine
+    container_name: safebox-node-exec
+    security_opt:
+    - no-new-privileges:true
+    - seccomp=/etc/safebox/docker/security/seccomp/safebox-runner.json
+    - apparmor=safebox-runner
+    cap_drop:
+    - ALL
+    read_only: true
+    tmpfs:
+    - /tmp:size=256m,mode=1777
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.40
+    volumes:
+    - /var/www/qbix:/var/www/qbix:ro
+    - /safebox/node/cache:/cache
+    working_dir: /var/www/qbix/platform/plugins/Safebox
+    command: node scripts/executor.js
+    labels:
+      safebox.scope: runtime.node
+      safebox.governance.m: '3'
+      safebox.governance.n: '5'
+    cpus: 4
+    mem_limit: 8g
+  llama-server-deepseek:
+    image: ghcr.io/ggerganov/llama.cpp@sha256:REPLACE_WITH_REAL_DIGEST_llamacpp_server
+    container_name: safebox-llama-deepseek
+    security_opt:
+    - no-new-privileges:true
+    - seccomp=/etc/safebox/docker/security/seccomp/safebox-gpu.json
+    cap_drop:
+    - ALL
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.50
+    volumes:
+    - /safebox/models/deepseek-r1:/models:ro
+    command: '--model /models/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf --host 0.0.0.0 --port 8001 --ctx-size
+      32768 --n-gpu-layers 40
+
+      '
+    labels:
+      safebox.scope: models.deepseek
+      safebox.governance.m: '2'
+      safebox.governance.n: '3'
+      safebox.governance.exponentialBackoff: 'true'
+    cpus: 8
+    mem_limit: 32g
+  ffmpeg:
+    image: linuxserver/ffmpeg@sha256:REPLACE_WITH_REAL_DIGEST_ffmpeg
+    container_name: safebox-ffmpeg
+    security_opt:
+    - no-new-privileges:true
+    - seccomp=/etc/safebox/docker/security/seccomp/safebox-runner.json
+    - apparmor=safebox-runner
+    cap_drop:
+    - ALL
+    read_only: true
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.60
+    volumes:
+    - /safebox/ffmpeg/temp:/tmp
+    - /safebox/ffmpeg/output:/output
+    labels:
+      safebox.scope: media.ffmpeg
+      safebox.governance.m: '2'
+      safebox.governance.n: '3'
+    cpus: 8
+    mem_limit: 16g
+  typesense:
+    image: typesense/typesense@sha256:REPLACE_WITH_REAL_DIGEST_typesense26
+    container_name: safebox-typesense
+    security_opt:
+    - no-new-privileges:true
+    - seccomp=/etc/safebox/docker/security/seccomp/safebox-runner.json
+    cap_drop:
+    - ALL
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.70
+    volumes:
+    - /safebox/typesense/data:/data
+    environment:
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_API_KEY_FILE: /run/secrets/typesense_api_key
+    secrets:
+    - typesense_api_key
+    labels:
+      safebox.scope: search.typesense
+      safebox.governance.m: '2'
+      safebox.governance.n: '3'
+    cpus: 2
+    mem_limit: 4g
+  # chromium: Chrome needs SYS_ADMIN for its OWN sandbox (user namespaces) and
+  # syscalls the tight profile blocks, so it keeps Docker's DEFAULT seccomp and
+  # adds back only SYS_ADMIN. This is the browser tier's known trade-off; a
+  # dedicated chrome-seccomp.json (allowing Chrome's namespace syscalls under a
+  # deny-default base) is the follow-up hardening. Egress is still constrained
+  # by the safebox-net network, and no-new-privileges + cap_drop ALL still hold.
+  chromium:
+    image: browserless/chrome@sha256:REPLACE_WITH_REAL_DIGEST_browserless
+    container_name: safebox-chromium
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    cap_add:
+    - SYS_ADMIN
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.80
+    volumes:
+    - /safebox/chromium/downloads:/downloads
+    labels:
+      safebox.scope: browser.chromium
+      safebox.governance.m: '2'
+      safebox.governance.n: '3'
+    cpus: 2
+    mem_limit: 4g
+  # system-protocol-api: the ORCHESTRATOR. It mounts /var/run/docker.sock to
+  # drive docker on behalf of the system component, so it CANNOT be AppArmor-
+  # confined or seccomp-restricted without breaking its job — it is trusted by
+  # necessity and gets no-new-privileges only. Its exposure is bounded by
+  # binding to 127.0.0.1:4000 and the M=5/N=7 governance on its scope.
+  system-protocol-api:
+    image: node@sha256:REPLACE_WITH_REAL_DIGEST_node20alpine
+    container_name: safebox-system-api
+    security_opt:
+    - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      safebox-net:
+        ipv4_address: 172.20.0.90
+    ports:
+    - 127.0.0.1:4000:4000
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /safebox/system-api/state:/state
+    - /etc/safebox:/config:ro
+    - ./system-protocol-api.js:/app/server.js:ro
+    - ./stmValidators.js:/app/stmValidators.js:ro
+    working_dir: /app
+    command: sh -c "npm install express body-parser dockerode && node server.js"
+    labels:
+      safebox.scope: system.admin
+      safebox.governance.m: '5'
+      safebox.governance.n: '7'
+    cpus: 2
+    mem_limit: 2g
+secrets:
+  typesense_api_key:
+    file: /etc/safebox/secrets/typesense_api_key.txt

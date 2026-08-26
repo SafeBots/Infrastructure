@@ -1,0 +1,42 @@
+{
+    "name":              "wan-2-2-i2v-a14b",
+    "manifestHash":      "",
+    "version":           "2.2",
+    "vendor":            "Alibaba (Tongyi Wanxiang)",
+    "license":           "Apache-2.0",
+    "homepage":          "https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+
+    "wanVideo": {
+        "huggingfaceModel":      "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+        "variant":               "i2v-a14b",
+        "architecture":          "Mixture-of-Experts (27B total, 14B active per step) — image-conditioned",
+        "defaultWidth":          1280,
+        "defaultHeight":         720,
+        "defaultNumFrames":      81,
+        "defaultFps":            16,
+        "defaultSteps":          40,
+        "defaultGuidance":       3.5,
+        "defaultGuidanceLowNoise": 3.0,
+        "defaultFlowShift":      5.0,
+        "maxNumFrames":          81
+    },
+
+    "capabilities": {
+        "text2video":   false,
+        "image2video":  true,
+        "video2video":  false,
+        "audio":        false,
+        "streaming":    false,
+        "outputFormats": ["mp4"]
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     24,
+        "recommendedGpu":     "1× RTX 4090 24GB (with CPU offload) / 1× A100 40GB / 1× H100 80GB",
+        "approximateLoadSec": 120,
+        "diskSizeGb":         55,
+        "videoSecondsTypical": "~120-300s per 5s clip on RTX 4090 with offload; ~60-150s on A100"
+    },
+
+    "notes": "Wan 2.2 I2V-A14B — image-to-video, MoE architecture. Takes a single still image plus optional text prompt and animates the image into a 5-second clip. Higher motion quality than the 5B variant; recommended when input photography matters (product shots, hero stills, brand imagery you want to bring to life). Apache 2.0. Requires inputImage in every request — text-only prompts are rejected with 400."
+}

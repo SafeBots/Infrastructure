@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="refresh" content="8">
+<title>Provisioning HTTPS — Safebox</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #1f1f24;
+    --bg-card:  #25252c;
+    --border:   #3a3a44;
+    --text:     #e8e6e0;
+    --text-dim: #a5a5b0;
+    --text-sub: #777783;
+    --accent:   #E8A020;
+    --accent-soft: rgba(232, 160, 32, 0.12);
+    --blue:     #3B82F6;
+    --green:    #4CAF50;
+  }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    font-size: 18px;
+    line-height: 1.6;
+    font-weight: 400;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Soft glow in the background */
+  body::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(circle, rgba(232, 160, 32, 0.08) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 580px;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+  }
+
+  .brand {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .brand-mark::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 2px;
+    transform: rotate(45deg);
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 44px 40px 36px;
+    box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.5);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    margin-bottom: 24px;
+  }
+
+  .pill .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 16px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .lede {
+    font-size: 18px;
+    color: var(--text);
+    margin-bottom: 28px;
+  }
+
+  .steps {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 28px;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 10px 0;
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+  .step:not(:last-child) { border-bottom: 1px solid var(--border); }
+
+  .step .num {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 1px;
+  }
+
+  .step.done .num {
+    background: var(--green);
+    color: #fff;
+  }
+  .step.done .num::before { content: '✓'; }
+  .step.done .num span { display: none; }
+  .step.done { color: var(--text); }
+
+  .step.active .num {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .step.active { color: var(--text); font-weight: 500; }
+
+  .troubleshoot {
+    font-size: 14px;
+    color: var(--text-sub);
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .troubleshoot summary {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-weight: 500;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .troubleshoot summary::-webkit-details-marker { display: none; }
+  .troubleshoot summary::before {
+    content: '▸';
+    transition: transform 0.15s;
+    color: var(--text-sub);
+  }
+  .troubleshoot[open] summary::before { transform: rotate(90deg); }
+
+  .troubleshoot ul {
+    list-style: none;
+    margin-top: 14px;
+    padding-left: 20px;
+  }
+  .troubleshoot li {
+    padding: 4px 0;
+    color: var(--text-sub);
+  }
+  .troubleshoot li::before {
+    content: '·';
+    color: var(--accent);
+    margin-right: 10px;
+    font-weight: 700;
+  }
+  .troubleshoot code {
+    background: var(--bg);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-dim);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  footer {
+    text-align: center;
+    margin-top: 28px;
+    color: var(--text-sub);
+    font-size: 13px;
+  }
+
+  @media (max-width: 480px) {
+    .card { padding: 32px 24px 28px; }
+    h1 { font-size: 26px; }
+    .lede { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="brand">
+    <span class="brand-mark">Safebox</span>
+  </div>
+
+  <div class="card">
+    <span class="pill"><span class="dot"></span>Provisioning</span>
+
+    <h1>Setting up your site</h1>
+
+    <p class="lede">We are issuing a TLS certificate and configuring this hostname. Check back in a minute — this page refreshes automatically.</p>
+
+    <div class="steps">
+      <div class="step done">
+        <span class="num"><span>1</span></span>
+        <div>Your domain is pointing at this server</div>
+      </div>
+      <div class="step active">
+        <span class="num"><span>2</span></span>
+        <div>Issuing TLS certificate via Let's Encrypt</div>
+      </div>
+      <div class="step">
+        <span class="num"><span>3</span></span>
+        <div>Activating your site</div>
+      </div>
+    </div>
+
+    <details class="troubleshoot">
+      <summary>Still here after a few minutes?</summary>
+      <ul>
+        <li>Verify your DNS A record points at the correct server IP</li>
+        <li>Confirm the hostname is spelled correctly in your browser address bar</li>
+        <li>Operator: check logs with <code>journalctl -u safebox-autohost -f</code></li>
+      </ul>
+    </details>
+  </div>
+
+  <footer>Powered by Safebox · Automatic HTTPS</footer>
+
+</div>
+
+</body>
+</html>

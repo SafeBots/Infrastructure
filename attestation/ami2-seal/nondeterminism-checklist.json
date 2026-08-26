@@ -1,0 +1,19 @@
+{
+  "description": "Enumerated nondeterminism sources the AMI-2 seal must neutralize. verify-ami2-reproduces.sh (diffoscope) is the empirical check; this list is the human-auditable taxonomy the test asserts seal-ami2.sh addresses.",
+  "sources": [
+    { "class": "ssh-host-keys",     "why": "generated per boot, random",        "handled_by": "rm /etc/ssh/ssh_host_*" },
+    { "class": "machine-id",        "why": "per-instance random 128-bit",        "handled_by": ": > /etc/machine-id" },
+    { "class": "inode-mtimes",      "why": "build/copy timestamps (largest class, ~15% of Nix unrepro)", "handled_by": "find -exec touch --date=@EPOCH" },
+    { "class": "logs",              "why": "embed timestamps and hostnames",     "handled_by": "rm -rf /var/log/*" },
+    { "class": "shell-history",     "why": "records the seal session itself",    "handled_by": "rm .bash_history" },
+    { "class": "random-seed",       "why": "systemd persistent entropy seed",    "handled_by": "rm /var/lib/systemd/random-seed" },
+    { "class": "dhcp-leases",       "why": "per-instance IP/lease timestamps",   "handled_by": "rm /var/lib/dhcp/* NetworkManager leases" },
+    { "class": "cloud-init-state",  "why": "per-instance provisioning artifacts","handled_by": "rm -rf /var/lib/cloud/*" },
+    { "class": "caches",            "why": "nondeterministic ordering/timestamps","handled_by": "rm -rf /var/cache/*" },
+    { "class": "tmp",               "why": "transient build residue",            "handled_by": "rm -rf /tmp/* /var/tmp/*" }
+  ],
+  "explicitly_excluded": [
+    { "path": "/nix/store", "why": "content-addressed; internal mtimes already canonical (epoch 1). Touching would CHANGE store hashes and break the closure. Normalize only OUTSIDE the store." }
+  ],
+  "verified_by": "verify-ami2-reproduces.sh (diffoscope on two independent seals; zero diff required)"
+}

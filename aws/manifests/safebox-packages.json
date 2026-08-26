@@ -1,0 +1,570 @@
+{
+  "name": "safebox-sandbox-packages",
+  "version": "1.0.0",
+  "description": "Complete catalog of npm packages and system tools available in Safebox sandbox",
+  
+  "packages": {
+    "document": {
+      "docx": {
+        "module": "docx",
+        "version": "^8.5.0",
+        "license": "MIT",
+        "description": "Create Word documents with full formatting",
+        "usage": "const { Document, Packer, Paragraph } = docx;",
+        "exports": ["Document", "Packer", "Paragraph", "TextRun", "Table", "TableRow", "TableCell", "ImageRun", "Header", "Footer"]
+      },
+      "exceljs": {
+        "module": "exceljs",
+        "version": "^4.4.0",
+        "license": "MIT",
+        "description": "Create/edit Excel spreadsheets",
+        "usage": "const workbook = new exceljs.Workbook();",
+        "exports": ["Workbook", "Worksheet", "Row", "Column", "Cell"]
+      },
+      "xlsx": {
+        "module": "xlsx",
+        "version": "^0.18.5",
+        "license": "Apache-2.0",
+        "description": "Parse and write Excel files",
+        "usage": "const workbook = xlsx.read(buffer);",
+        "exports": ["read", "write", "readFile", "writeFile", "utils"]
+      },
+      "pptxgenjs": {
+        "module": "pptxgenjs",
+        "version": "^3.12.0",
+        "license": "MIT",
+        "description": "Create PowerPoint presentations",
+        "usage": "const pptx = new pptxgenjs();",
+        "exports": ["default"]
+      },
+      "officegen": {
+        "module": "officegen",
+        "version": "^0.6.5",
+        "license": "MIT",
+        "description": "Generate Office documents (DOCX/XLSX/PPTX)",
+        "usage": "const docx = officegen('docx');",
+        "exports": ["default"]
+      }
+    },
+    
+    "pdf": {
+      "pdfkit": {
+        "module": "pdfkit",
+        "version": "^0.14.0",
+        "license": "MIT",
+        "description": "Create PDF documents",
+        "usage": "const doc = new pdfkit();",
+        "exports": ["default"]
+      },
+      "pdfLib": {
+        "module": "pdf-lib",
+        "version": "^1.17.1",
+        "license": "MIT",
+        "description": "Create and modify PDF files",
+        "usage": "const { PDFDocument } = pdfLib;",
+        "exports": ["PDFDocument", "PDFPage", "PDFFont", "PDFImage", "rgb", "degrees"]
+      },
+      "jspdf": {
+        "module": "jspdf",
+        "version": "^2.5.1",
+        "license": "MIT",
+        "description": "Generate PDF files in JavaScript",
+        "usage": "const doc = new jspdf.jsPDF();",
+        "exports": ["jsPDF"]
+      }
+    },
+    
+    "image": {
+      "sharp": {
+        "module": "sharp",
+        "version": "^0.33.2",
+        "license": "Apache-2.0",
+        "description": "High-performance image processing",
+        "usage": "await sharp(buffer).resize(800, 600).toBuffer();",
+        "exports": ["default"]
+      },
+      "jimp": {
+        "module": "jimp",
+        "version": "^0.22.10",
+        "license": "MIT",
+        "description": "Image processing (pure JavaScript)",
+        "usage": "const image = await jimp.read(buffer);",
+        "exports": ["default", "read", "MIME_PNG", "MIME_JPEG"]
+      },
+      "canvas": {
+        "module": "canvas",
+        "version": "^2.11.2",
+        "license": "MIT",
+        "description": "Server-side Canvas API",
+        "usage": "const canvas = canvas.createCanvas(800, 600);",
+        "exports": ["createCanvas", "loadImage", "Image", "Canvas"]
+      },
+      "qrcode": {
+        "module": "qrcode",
+        "version": "^1.5.3",
+        "license": "MIT",
+        "description": "Generate QR codes",
+        "usage": "await qrcode.toBuffer('text');",
+        "exports": ["toBuffer", "toDataURL", "toString", "toFile"]
+      }
+    },
+    
+    "charts": {
+      "chartjs": {
+        "module": "chartjs-node-canvas",
+        "version": "^4.1.6",
+        "license": "MIT",
+        "description": "Server-side Chart.js rendering",
+        "usage": "const { ChartJSNodeCanvas } = chartjs;",
+        "exports": ["ChartJSNodeCanvas"]
+      },
+      "mermaid": {
+        "module": "mermaid",
+        "version": "^10.9.0",
+        "license": "MIT",
+        "description": "Generate diagrams from text",
+        "usage": "await mermaid.render('id', 'graph TD; A-->B');",
+        "exports": ["default", "render", "initialize"]
+      },
+      "vega": {
+        "module": "vega",
+        "version": "^5.27.0",
+        "license": "BSD-3-Clause",
+        "description": "Declarative visualization grammar",
+        "usage": "const view = new vega.View(spec);",
+        "exports": ["View", "parse", "scheme"]
+      },
+      "vegaLite": {
+        "module": "vega-lite",
+        "version": "^5.16.3",
+        "license": "BSD-3-Clause",
+        "description": "High-level visualization grammar",
+        "usage": "const spec = vegaLite.compile(vlSpec);",
+        "exports": ["compile"]
+      }
+    },
+    
+    "archive": {
+      "archiver": {
+        "module": "archiver",
+        "version": "^6.0.1",
+        "license": "MIT",
+        "description": "Create ZIP/TAR archives",
+        "usage": "const archive = archiver('zip');",
+        "exports": ["default"]
+      },
+      "admZip": {
+        "module": "adm-zip",
+        "version": "^0.5.10",
+        "license": "MIT",
+        "description": "Simple ZIP manipulation",
+        "usage": "const zip = new admZip();",
+        "exports": ["default"]
+      },
+      "tarStream": {
+        "module": "tar-stream",
+        "version": "^3.1.7",
+        "license": "MIT",
+        "description": "TAR stream parsing/creation",
+        "usage": "const tar = tarStream.pack();",
+        "exports": ["pack", "extract"]
+      }
+    },
+    
+    "email": {
+      "nodemailer": {
+        "module": "nodemailer",
+        "version": "^6.9.9",
+        "license": "MIT",
+        "description": "Send emails",
+        "usage": "const transporter = nodemailer.createTransport(config);",
+        "exports": ["createTransport", "createTestAccount", "getTestMessageUrl"]
+      },
+      "mjml": {
+        "module": "mjml",
+        "version": "^4.15.3",
+        "license": "MIT",
+        "description": "Responsive email markup",
+        "usage": "const { html } = mjml(mjmlString);",
+        "exports": ["default"]
+      }
+    },
+    
+    "markdown": {
+      "markdownIt": {
+        "module": "markdown-it",
+        "version": "^14.0.0",
+        "license": "MIT",
+        "description": "Markdown parser",
+        "usage": "const md = new markdownIt(); const html = md.render(text);",
+        "exports": ["default"]
+      },
+      "marked": {
+        "module": "marked",
+        "version": "^12.0.0",
+        "license": "MIT",
+        "description": "Fast Markdown parser",
+        "usage": "const html = marked.parse(markdown);",
+        "exports": ["marked", "parse", "Lexer", "Parser", "Renderer"]
+      },
+      "turndown": {
+        "module": "turndown",
+        "version": "^7.1.2",
+        "license": "MIT",
+        "description": "HTML to Markdown converter",
+        "usage": "const td = new turndown(); const md = td.turndown(html);",
+        "exports": ["default"]
+      }
+    },
+    
+    "data": {
+      "papaparse": {
+        "module": "papaparse",
+        "version": "^5.4.1",
+        "license": "MIT",
+        "description": "CSV parser/writer",
+        "usage": "const result = papaparse.parse(csv);",
+        "exports": ["parse", "unparse"]
+      },
+      "json2csv": {
+        "module": "json2csv",
+        "version": "^6.0.0",
+        "license": "MIT",
+        "description": "JSON to CSV converter",
+        "usage": "const csv = json2csv.parse(data);",
+        "exports": ["parse", "Parser", "Transform"]
+      },
+      "xml2js": {
+        "module": "xml2js",
+        "version": "^0.6.2",
+        "license": "MIT",
+        "description": "XML to JavaScript object converter",
+        "usage": "xml2js.parseString(xml, (err, result) => {});",
+        "exports": ["parseString", "Builder"]
+      },
+      "fastXmlParser": {
+        "module": "fast-xml-parser",
+        "version": "^4.3.5",
+        "license": "MIT",
+        "description": "Fast XML parser/builder",
+        "usage": "const parser = new fastXmlParser.XMLParser();",
+        "exports": ["XMLParser", "XMLBuilder", "XMLValidator"]
+      },
+      "yaml": {
+        "module": "yaml",
+        "version": "^2.3.4",
+        "license": "ISC",
+        "description": "YAML parser/stringifier",
+        "usage": "const obj = yaml.parse(str);",
+        "exports": ["parse", "stringify", "parseDocument"]
+      },
+      "toml": {
+        "module": "toml",
+        "version": "^3.0.0",
+        "license": "MIT",
+        "description": "TOML parser",
+        "usage": "const obj = toml.parse(str);",
+        "exports": ["parse"]
+      }
+    },
+    
+    "template": {
+      "handlebars": {
+        "module": "handlebars",
+        "version": "^4.7.8",
+        "license": "MIT",
+        "description": "Handlebars template engine",
+        "usage": "const template = handlebars.compile(source);",
+        "exports": ["compile", "precompile", "registerHelper", "registerPartial"]
+      },
+      "mustache": {
+        "module": "mustache",
+        "version": "^4.2.0",
+        "license": "MIT",
+        "description": "Mustache template engine",
+        "usage": "const html = mustache.render(template, data);",
+        "exports": ["render", "parse"]
+      },
+      "ejs": {
+        "module": "ejs",
+        "version": "^3.1.9",
+        "license": "Apache-2.0",
+        "description": "Embedded JavaScript templates",
+        "usage": "const html = ejs.render(template, data);",
+        "exports": ["render", "compile", "renderFile"]
+      },
+      "pug": {
+        "module": "pug",
+        "version": "^3.0.2",
+        "license": "MIT",
+        "description": "Pug template engine",
+        "usage": "const html = pug.render(template, data);",
+        "exports": ["render", "compile", "renderFile"]
+      }
+    },
+    
+    "barcode": {
+      "jsbarcode": {
+        "module": "jsbarcode",
+        "version": "^3.11.6",
+        "license": "MIT",
+        "description": "Barcode generator",
+        "usage": "jsbarcode(canvas, '1234567890');",
+        "exports": ["default"]
+      },
+      "bwipJs": {
+        "module": "bwip-js",
+        "version": "^4.3.0",
+        "license": "MIT",
+        "description": "Advanced barcode generator (100+ formats)",
+        "usage": "await bwipJs.toBuffer({ bcid: 'code128', text: '12345' });",
+        "exports": ["toBuffer", "toSVG", "toCanvas"]
+      },
+      "svgCaptcha": {
+        "module": "svg-captcha",
+        "version": "^1.4.0",
+        "license": "MIT",
+        "description": "Generate SVG CAPTCHAs",
+        "usage": "const captcha = svgCaptcha.create();",
+        "exports": ["create", "createMathExpr"]
+      }
+    },
+    
+    "font": {
+      "opentype": {
+        "module": "opentype.js",
+        "version": "^1.3.4",
+        "license": "MIT",
+        "description": "Parse and write OpenType fonts",
+        "usage": "const font = opentype.load(buffer);",
+        "exports": ["load", "parse", "Font", "Glyph", "Path"]
+      }
+    },
+    
+    "encoding": {
+      "textEncoding": {
+        "module": "text-encoding",
+        "version": "^0.7.0",
+        "license": "Apache-2.0",
+        "description": "TextEncoder/TextDecoder polyfill",
+        "usage": "const encoder = new textEncoding.TextEncoder();",
+        "exports": ["TextEncoder", "TextDecoder"]
+      },
+      "iconvLite": {
+        "module": "iconv-lite",
+        "version": "^0.6.3",
+        "license": "MIT",
+        "description": "Character encoding conversion",
+        "usage": "const str = iconvLite.decode(buffer, 'utf8');",
+        "exports": ["decode", "encode", "encodingExists"]
+      }
+    },
+    
+    "utility": {
+      "lodash": {
+        "module": "lodash",
+        "version": "^4.17.21",
+        "license": "MIT",
+        "description": "Utility library",
+        "usage": "const _ = lodash;",
+        "exports": ["default"],
+        "commonFunctions": ["map", "filter", "reduce", "groupBy", "sortBy", "uniq", "chunk", "debounce", "throttle"]
+      },
+      "_": {
+        "module": "lodash",
+        "version": "^4.17.21",
+        "license": "MIT",
+        "description": "Lodash alias",
+        "usage": "Same as lodash",
+        "exports": ["default"]
+      },
+      "moment": {
+        "module": "moment",
+        "version": "^2.30.1",
+        "license": "MIT",
+        "description": "Date/time manipulation",
+        "usage": "const now = moment();",
+        "exports": ["default"]
+      },
+      "dayjs": {
+        "module": "dayjs",
+        "version": "^1.11.10",
+        "license": "MIT",
+        "description": "Lightweight date library",
+        "usage": "const now = dayjs();",
+        "exports": ["default"]
+      },
+      "uuid": {
+        "module": "uuid",
+        "version": "^9.0.1",
+        "license": "MIT",
+        "description": "UUID generator",
+        "usage": "const id = uuid.v4();",
+        "exports": ["v1", "v4", "v5", "validate"]
+      },
+      "nanoid": {
+        "module": "nanoid",
+        "version": "^5.0.5",
+        "license": "MIT",
+        "description": "Tiny URL-friendly ID generator",
+        "usage": "const id = nanoid.nanoid();",
+        "exports": ["nanoid", "customAlphabet"]
+      },
+      "stringWidth": {
+        "module": "string-width",
+        "version": "^7.1.0",
+        "license": "MIT",
+        "description": "Get visual width of string",
+        "usage": "const width = stringWidth('hello');",
+        "exports": ["default"]
+      }
+    },
+    
+    "officeParser": {
+      "mammoth": {
+        "module": "mammoth",
+        "version": "^1.6.0",
+        "license": "BSD-2-Clause",
+        "description": "Extract text from DOCX files",
+        "usage": "const result = await mammoth.extractRawText({ buffer });",
+        "exports": ["extractRawText", "convertToHtml"]
+      },
+      "htmlDocxJs": {
+        "module": "html-docx-js",
+        "version": "^0.3.1",
+        "license": "MIT",
+        "description": "Convert HTML to DOCX",
+        "usage": "const docx = htmlDocxJs.asBlob(html);",
+        "exports": ["asBlob"]
+      },
+      "docxTemplates": {
+        "module": "docx-templates",
+        "version": "^4.11.3",
+        "license": "MIT",
+        "description": "Fill DOCX templates",
+        "usage": "const output = await docxTemplates.createReport({ template, data });",
+        "exports": ["createReport"]
+      },
+      "xlsxPopulate": {
+        "module": "xlsx-populate",
+        "version": "^1.21.0",
+        "license": "MIT",
+        "description": "Modify Excel files",
+        "usage": "const workbook = await xlsxPopulate.fromDataAsync(buffer);",
+        "exports": ["fromBlankAsync", "fromDataAsync", "fromFileAsync"]
+      }
+    }
+  },
+  
+  "systemTools": {
+    "FFmpeg": {
+      "module": "@safebox/ffmpeg",
+      "version": "1.0.0",
+      "license": "MIT",
+      "description": "FFmpeg wrapper for video/audio processing",
+      "binaryPath": "/opt/safebox/media/bin/ffmpeg",
+      "usage": "const meta = await FFmpeg.probe(buffer);",
+      "exports": ["FFmpeg", "FFmpegError"],
+      "methods": ["probe", "extractAudio", "extractVideo", "transcode", "extractFrames"]
+    },
+    "PDFium": {
+      "module": "@safebox/pdfium",
+      "version": "1.0.0",
+      "license": "MIT",
+      "description": "pdfium wrapper for PDF rendering/extraction",
+      "binaryPath": "/opt/safebox/media/bin/pdfium",
+      "usage": "const pages = await PDFium.render(buffer);",
+      "exports": ["PDFium", "PDFiumError"],
+      "methods": ["render", "extractText", "getMetadata", "measureTextDensity"]
+    },
+    "ImageMagick": {
+      "module": "@safebox/imagemagick",
+      "version": "1.0.0",
+      "license": "MIT",
+      "description": "ImageMagick wrapper for image manipulation",
+      "binaryPath": "/opt/safebox/media/bin/convert",
+      "usage": "const converted = await ImageMagick.convert(buffer, { to: 'png' });",
+      "exports": ["ImageMagick", "ImageMagickError"],
+      "methods": ["convert", "resize", "crop", "rotate", "composite"]
+    },
+    "LibreOffice": {
+      "module": "@safebox/libreoffice",
+      "version": "1.0.0",
+      "license": "MIT",
+      "description": "LibreOffice wrapper for Office document conversion",
+      "binaryPath": "/opt/safebox/libreoffice/program/soffice",
+      "usage": "const pdf = await LibreOffice.toPDF(docxBuffer, { format: 'docx' });",
+      "exports": ["LibreOffice", "LibreOfficeError"],
+      "methods": ["toPDF", "extractText"]
+    },
+    "Media": {
+      "module": "@safebox/media",
+      "version": "1.0.0",
+      "license": "MIT",
+      "description": "Master wrapper - re-exports all system tools",
+      "usage": "const { FFmpeg, PDFium, ImageMagick, LibreOffice } = Media;",
+      "exports": ["FFmpeg", "PDFium", "ImageMagick", "LibreOffice", "Video", "PDF", "Office", "Image"]
+    }
+  },
+  
+  "sandboxGlobals": {
+    "description": "All packages available as globals in sandbox (no require() needed)",
+    "globals": {
+      "docx": "packages.document.docx",
+      "exceljs": "packages.document.exceljs",
+      "xlsx": "packages.document.xlsx",
+      "pptxgenjs": "packages.document.pptxgenjs",
+      "pdfkit": "packages.pdf.pdfkit",
+      "pdfLib": "packages.pdf.pdfLib",
+      "sharp": "packages.image.sharp",
+      "jimp": "packages.image.jimp",
+      "canvas": "packages.image.canvas",
+      "qrcode": "packages.image.qrcode",
+      "chartjs": "packages.charts.chartjs",
+      "mermaid": "packages.charts.mermaid",
+      "archiver": "packages.archive.archiver",
+      "admZip": "packages.archive.admZip",
+      "nodemailer": "packages.email.nodemailer",
+      "mjml": "packages.email.mjml",
+      "markdownIt": "packages.markdown.markdownIt",
+      "marked": "packages.markdown.marked",
+      "turndown": "packages.markdown.turndown",
+      "papaparse": "packages.data.papaparse",
+      "xml2js": "packages.data.xml2js",
+      "yaml": "packages.data.yaml",
+      "handlebars": "packages.template.handlebars",
+      "mustache": "packages.template.mustache",
+      "ejs": "packages.template.ejs",
+      "lodash": "packages.utility.lodash",
+      "_": "packages.utility._",
+      "moment": "packages.utility.moment",
+      "dayjs": "packages.utility.dayjs",
+      "uuid": "packages.utility.uuid",
+      "nanoid": "packages.utility.nanoid",
+      "FFmpeg": "systemTools.FFmpeg",
+      "PDFium": "systemTools.PDFium",
+      "ImageMagick": "systemTools.ImageMagick",
+      "LibreOffice": "systemTools.LibreOffice",
+      "Media": "systemTools.Media"
+    }
+  },
+  
+  "installation": {
+    "location": "/opt/safebox/node_modules",
+    "totalSize": "~200 MB",
+    "installCommand": "npm install --production --no-optional",
+    "installTime": "~5 minutes"
+  },
+  
+  "license": {
+    "summary": "All packages use permissive licenses (MIT, Apache-2.0, BSD, ISC)",
+    "gplFree": true,
+    "note": "No GPL components in runtime path"
+  },
+  
+  "typescript": {
+    "enabled": true,
+    "location": "/opt/safebox/node_modules/@types",
+    "description": "TypeScript definitions included for all packages"
+  }
+}

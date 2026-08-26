@@ -1,0 +1,21 @@
+{
+    "name":         "clip-vit-base-patch32",
+    "onnxModel":    "openai/clip-vit-base-patch32",
+    "manifestHash": "",
+    "version":      "base-patch32",
+    "vendor":       "OpenAI",
+    "license":      "MIT",
+    "homepage":     "https://huggingface.co/openai/clip-vit-base-patch32",
+    "task":         "vision-embed",
+    "weights": [],
+    "onnx": { "device": "cpu", "opset": 17 },
+    "capabilities": { "embed": true, "rerank": false, "classify": false, "vision": true },
+    "resources": {
+        "minGpuMemoryGb":     0,
+        "recommendedGpu":     "CPU-viable; GPU speeds batch image encoding",
+        "approximateLoadSec": 5,
+        "diskSizeGb":         0.35,
+        "embeddingDim":       512
+    },
+    "notes": "CLIP vision+text encoder. Produces a shared image/text embedding space for image search, zero-shot classification, and dedup. The vision-encoder half of the 'not-LLM' tier. CPU-viable for modest volumes."
+}
