@@ -22,15 +22,49 @@ point, and it is why this code is open for you to inspect.
 This is not open-source software, and we are honest about the one thing we hold
 back: our patents. We invented the methods this software embodies, and we keep
 the patent rights to them. We use those rights defensively — to stop this work
-from being copied, forked, or reimplemented into a competing product. You are
-free to look, learn, build, and verify. You are not free to take the patented
-inventions and run them in production or ship them in a competing system without
-a separate license from us.
+from being copied, forked, or reimplemented into a competing product.
+
+You are free to look, learn, build, and verify. You are also free to run the
+official images we publish to cloud providers (AWS, GCP, Azure, and others) —
+exactly as we make them available — for any purpose, including production. That
+is the product. The attested image is the distribution channel; the attestation
+guarantee is what you are paying for. Running our published images does not
+require a separate patent license.
+
+What you may not do is take the patented inventions — the methods, the
+architecture, the attestation model — and reimplement them, fork them into a
+competing product, or build your own distribution that bypasses ours. We protect
+against forks not because we fear competition in the abstract, but because the
+attestation model depends on the integrity of the images we publish. A forked
+image that claims to be "Safebox-compatible" but runs modified code breaks the
+promise that end users rely on. Our patent rights exist to protect that promise.
 
 That is the whole bargain, in one sentence: a fully transparent, independently
-verifiable codebase, with the patents reserved so it cannot be turned into a
-competitor. Inspect and verify all you like. Practicing the patented inventions
-takes our permission.
+verifiable codebase, distributed as attested cloud images you can run freely,
+with the patents reserved so the system's integrity guarantee cannot be forked
+away. Inspect and verify all you like. Run our images all you like. Practicing
+the patented inventions outside our published images takes our permission.
+
+End users are free to interact with software running inside a Safebox — through
+its APIs, its streams, its tools, its web interfaces — in any way the software
+permits. The running system's own rules govern what is allowed: what actions
+require approval, what data can be accessed, what tools can execute. Code is
+law, the same principle that governs smart contracts on a blockchain.
+
+Developers are free to write applications that communicate with a Safebox from
+the outside — clients, integrations, bots, dashboards — without any license
+from us. Your application talks to the Safebox; the Safebox enforces its own
+policies. That boundary is clean.
+
+If you want to install your own software inside a Safebox — to run a custom
+application that benefits from the attested environment, the governance engine,
+the sealed credential vault, and all the guarantees the platform provides —
+you may do so through the mechanisms the software itself provides (app layers,
+plugins, tools), subject to the software's own approval process. If you need
+a custom flavor of Safebox with software installed outside those mechanisms,
+or if you want to distribute your own Safebox images that include your
+proprietary software under the attestation umbrella, contact us for a custom
+license.
 
 The formal terms follow. Where the plain-language explanation above and the
 formal terms below differ, the formal terms govern.
@@ -67,6 +101,40 @@ data as part of a commercial or operational offering; and using it in, or as
 part of, any product or service that competes with any product or service we
 offer.
 
+"Authorized Deployment" means running an unmodified machine image or container
+image that we have published and made available through a supported cloud
+provider (such as AWS, GCP, or Azure) or through our own distribution channels,
+where the image's integrity is verifiable through the attestation mechanisms
+described in the Licensed Work. Authorized Deployment is permitted for any
+purpose, including Production Use, without a separate patent license, because
+the integrity guarantee that our patents protect is preserved by the unmodified
+image. An image is "unmodified" if it passes the attestation verification
+procedures included in the Licensed Work.
+
+"External Interaction" means communicating with a running instance of the
+Licensed Work from outside it — through its published APIs, protocols, web
+interfaces, stream subscriptions, tool invocations, or any other interface the
+running software exposes. External Interaction includes writing and operating
+client applications, integrations, bots, dashboards, and other software that
+communicates with the Licensed Work over a network. External Interaction does
+not require any license from us — your software talks to the Safebox; the
+Safebox's own rules govern what it permits.
+
+"In-Safebox Installation" means installing your own software inside a running
+instance of the Licensed Work, through the mechanisms the software itself
+provides: app layers, plugins, tools, or any other installation mechanism that
+the governance and attestation systems are designed to accommodate. In-Safebox
+Installation is permitted without a separate license from us, subject to the
+running software's own approval process (governance policies, app-layer
+attestation, M-of-N blessing where required). Software installed through these
+mechanisms operates under the Safebox's rules — code is law.
+
+"Custom Image Distribution" means creating, modifying, or distributing machine
+images or container images that include the Licensed Work (or parts of it)
+combined with your own software, outside the mechanisms the Licensed Work
+provides for In-Safebox Installation. Custom Image Distribution requires a
+separate written license from us.
+
 "Patent Claims" means any claims of any patent or patent application, now
 existing or later arising, that we own or control, that are or would be
 infringed by making, using, selling, offering to sell, importing, running, or
@@ -84,33 +152,59 @@ license to:
   (b) view, study, and analyze its source code;
   (c) build and compile it;
   (d) run it for Non-Production Use;
-  (e) create derivative works of it for Non-Production Use; and
+  (e) create derivative works of it for Non-Production Use;
   (f) redistribute the Licensed Work and such derivative works, so long as every
       copy you distribute (1) includes this entire license unchanged — including
       the WHY THIS LICENSE EXISTS section and the PATENT RESERVATION in Section
-      4 — and (2) keeps intact all copyright, attribution, and notice text.
+      4 — and (2) keeps intact all copyright, attribution, and notice text; and
+  (g) make Authorized Deployment of the Licensed Work for any purpose, including
+      Production Use, by running unmodified images we have published through
+      supported cloud providers or our own distribution channels;
+  (h) engage in External Interaction with any running instance of the Licensed
+      Work, including writing and operating client applications, integrations,
+      and other software that communicates with it, without restriction; and
+  (i) perform In-Safebox Installation of your own software through the mechanisms
+      the Licensed Work provides (app layers, plugins, tools), subject to the
+      running software's own governance and attestation rules.
 
 This is a COPYRIGHT license only. It grants nothing, and implies nothing, about
-patents. Patents are addressed exclusively in Sections 3 and 4, and those
-sections control over any contrary reading of this one.
+patents, except as specified in Section 3 regarding Authorized Deployment.
+Patents are addressed exclusively in Sections 3 and 4, and those sections
+control over any contrary reading of this one.
 
 
 3. WHAT REQUIRES A SEPARATE LICENSE (PRODUCTION USE)
 
-The rights in Section 2 cover Non-Production Use only. Production Use of the
-Licensed Work is not granted by this license.
+The rights in Section 2 cover Non-Production Use and Authorized Deployment.
+All other Production Use of the Licensed Work is not granted by this license.
 
-If you want to make Production Use of the Licensed Work — to run it in a live
-product or service, to process other people's data with it commercially, or to
-build something that competes with us — you need a separate written license from
-us.
+Authorized Deployment — running our unmodified, attested images as we publish
+them — is permitted for Production Use without a separate license. The
+attestation mechanism built into the images preserves the integrity guarantee
+that our patents protect. You may run our published images to serve your
+customers, process their data, and operate your business.
+
+If you want to make any other Production Use of the Licensed Work — to run
+modified versions in a live product or service, to reimplement the patented
+methods in your own software, to build something that competes with us using
+our inventions, or to distribute images that bypass our attestation — you need
+a separate written license from us.
+
+Custom Image Distribution — creating or distributing your own machine images
+that include the Licensed Work combined with your software, outside the
+In-Safebox Installation mechanisms — also requires a separate written license.
+Contact us at licensing@safebots.ai.
 
 
 4. WHAT WE KEEP (PATENT RESERVATION) — PLEASE READ
 
-NO PATENT LICENSE IS GRANTED. We grant You no license, immunity, covenant not to
-sue, or other right under any Patent Claims — not expressly, and not by
-implication, estoppel, patent exhaustion, or any other legal doctrine. ALL
+NO PATENT LICENSE IS GRANTED EXCEPT FOR AUTHORIZED DEPLOYMENT. We grant You no
+license, immunity, covenant not to sue, or other right under any Patent Claims —
+not expressly, and not by implication, estoppel, patent exhaustion, or any other
+legal doctrine — EXCEPT that Authorized Deployment (as defined in Section 1) of
+unmodified images we have published carries an implied patent license limited to
+running the Licensed Work as embodied in those images, for so long as the images
+remain unmodified and pass our published attestation verification. ALL OTHER
 PATENT RIGHTS ARE EXPRESSLY RESERVED.
 
 For the avoidance of doubt, and despite anything else in this license or any
