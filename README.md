@@ -489,6 +489,8 @@ The privileged process script is measured in the app-layer attestation alongside
 
 ## Onboarding paths
 
+**Start here: [`BUILD.md`](BUILD.md)** — two paths to a running Safebox (Amazon Linux/dnf for today, NixOS for production), copy-pasteable, with the honest tradeoffs between them.
+
 The same AMI + components support three deployment paths. Customers pick the one that matches how much of the stack they want us to manage.
 
 ### Path A — Cloud-managed (CloudFormation one-click)
