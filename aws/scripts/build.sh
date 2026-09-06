@@ -10,7 +10,7 @@
 #
 # Steps (each documented; the ones needing real Nix/cloud are marked):
 #   1. nix build .#<cloud>-builder       # reproducible SSH-ingress builder image
-#   2. launch builder, run seal-ami2.sh  # remove SSH, normalize nondeterminism
+#   2. launch builder, run seal-image.sh  # remove SSH, normalize nondeterminism
 #   3. image the sealed rootfs -> cloud format, register as custom/marketplace img
 #   4. record image id + reference measurement
 #
@@ -51,6 +51,6 @@ fi
 
 echo "==> Building Safebox image for ${CLOUD} (flake target .#${TARGET})"
 ( cd "$FLAKE_DIR" && nix build ".#${TARGET}" )
-echo "==> Builder image built. Next: launch it, run attestation/ami2-seal/seal-ami2.sh,"
+echo "==> Builder image built. Next: launch it, run attestation/image-seal/seal-image.sh,"
 echo "    image the sealed rootfs, and register it. See nixos/TURN3-RUNBOOK.md for the"
 echo "    per-cloud register + attest commands."

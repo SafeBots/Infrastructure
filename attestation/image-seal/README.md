@@ -16,7 +16,7 @@ So we do not rely on the whole Nix closure being bit-identical. We use two image
   getty (all asserted absent at build time in `hosts/ami1-builder.nix`). AMI-1
   does the heavy lifting; it does **not** need to be bit-reproducible, because it
   is the builder, not the thing attested.
-- **The seal** — `seal-ami2.sh`, a short, fully-auditable script you run once on
+- **The seal** — `seal-image.sh`, a short, fully-auditable script you run once on
   a booted AMI-1. It (1) tears down SSH and every login path, (2) removes key
   material and machine identity, and (3) normalizes the enumerated set of
   nondeterminism sources (mtimes, host keys, machine-id, logs, seeds, leases,
@@ -25,7 +25,7 @@ So we do not rely on the whole Nix closure being bit-identical. We use two image
   measurement is deterministic **because the seal explicitly constant-ises every
   variable field**, not because 40,000 nixpkgs derivations all happened to be
   deterministic. The determinism guarantee lives in a script a human can read in
-  full (`wc -l seal-ami2.sh` ≈ 90 lines), not in a build graph no one can audit.
+  full (`wc -l seal-image.sh` ≈ 90 lines), not in a build graph no one can audit.
 
 This is the construction the verification patent describes: a simple script on a
 Nix-built machine produces the attested image, and that image is reproducible by
@@ -34,7 +34,7 @@ that vary.
 
 ## The critical exclusion: /nix/store
 
-`seal-ami2.sh` normalizes mtimes **everywhere except `/nix/store`**. Store paths
+`seal-image.sh` normalizes mtimes **everywhere except `/nix/store`**. Store paths
 are content-addressed and their internal mtimes are already canonical (epoch 1);
 touching them would **change their hashes and break the closure**. Normalize
 outside the store only. `test-seal-coverage.py` asserts this exclusion is present.
@@ -56,12 +56,12 @@ and diffoscope.
 community tests anything: build twice, `diffoscope`, expect zero diff.
 `verify-ami2-reproduces.sh` seals two independent AMI-1 builds and diffs them. A
 diff names the nondeterminism source that escaped the scrub — add a line to
-`seal-ami2.sh`, add it to `nondeterminism-checklist.json`, re-run. Zero diff means
+`seal-image.sh`, add it to `nondeterminism-checklist.json`, re-run. Zero diff means
 the enumerated checklist is complete.
 
 ## Files
 
-- `seal-ami2.sh` — the teardown + normalization pass (run on booted AMI-1).
+- `seal-image.sh` — the teardown + normalization pass (run on booted AMI-1).
 - `verify-ami2-reproduces.sh` — build-twice + diffoscope determinism check.
 - `nondeterminism-checklist.json` — the human-auditable taxonomy of what the seal
   neutralizes, plus the `/nix/store` exclusion rationale.

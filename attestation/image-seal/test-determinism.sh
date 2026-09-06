@@ -4,7 +4,7 @@
 #   (1) sealed trees are byte-identical, (2) /nix/store mtime is preserved,
 #   (3) the check has teeth (catches an uncovered nondeterminism source).
 set -uo pipefail
-HERE="$(cd "$(dirname "$0")" && pwd)"; SEAL="$HERE/seal-ami2.sh"
+HERE="$(cd "$(dirname "$0")" && pwd)"; SEAL="$HERE/seal-image.sh"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fails=0; ok(){ echo "  PASS $1"; }; no(){ echo "  FAIL $1"; fails=$((fails+1)); }
 

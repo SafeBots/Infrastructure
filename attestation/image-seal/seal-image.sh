@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# seal-ami2.sh — turn the AMI-1 builder image into the attested AMI-2.
+# seal-image.sh — turn the AMI-1 builder image into the attested AMI-2.
 #
 # WHY (read before editing): Nix is ~91% bit-reproducible, not 100%. Attestation
 # measures a hash (PCR); a hash needs 100% or it mismatches. The ~9% that varies
@@ -12,8 +12,8 @@
 # no one can audit.
 #
 # MODES:
-#   seal-ami2.sh                 # live: operate on the running system's /
-#   seal-ami2.sh --rootfs DIR    # offline: operate on a mounted image at DIR
+#   seal-image.sh                 # live: operate on the running system's /
+#   seal-image.sh --rootfs DIR    # offline: operate on a mounted image at DIR
 # Offline mode is what verify-ami2-reproduces.sh uses, and is the safer way to
 # seal in a build pipeline (mount the image, seal it, then create AMI-2).
 set -euo pipefail
@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
 done
 R="${R%/}"                                          # strip trailing slash
 p(){ printf '%s%s' "$R" "$1"; }                     # path within the target root
-log(){ echo "[seal-ami2] $*"; }
+log(){ echo "[seal-image] $*"; }
 live(){ [ "$R" = "" ]; }                            # R="" means live "/"
 
 # ── 1. TEARDOWN: remove the only ingress channel (SSH) and any login path ──────
@@ -48,7 +48,7 @@ for bad in telnetd in.telnetd rlogind rshd amazon-ssm-agent ssm-agent \
   if [ -e "$(p /usr/bin/$bad)" ] || [ -e "$(p /usr/sbin/$bad)" ] || \
      [ -e "$(p /lib/systemd/system/$bad.service)" ] || \
      [ -e "$(p /etc/systemd/system/$bad.service)" ]; then
-    echo "[seal-ami2] FATAL: forbidden ingress/agent present: $bad" >&2; exit 1
+    echo "[seal-image] FATAL: forbidden ingress/agent present: $bad" >&2; exit 1
   fi
 done
 
@@ -79,10 +79,10 @@ find "$R/" -xdev \
 
 # ── 4. FINAL ASSERTIONS: fail if anything we promised to remove survived ───────
 log "verifying teardown"
-[ ! -e "$(p /etc/ssh/sshd_config)" ] || { echo "[seal-ami2] FATAL: sshd_config survived" >&2; exit 1; }
-! ls "$(p /etc/ssh)"/ssh_host_* >/dev/null 2>&1 || { echo "[seal-ami2] FATAL: host keys survived" >&2; exit 1; }
-[ ! -s "$(p /etc/machine-id)" ] || { echo "[seal-ami2] FATAL: machine-id not empty" >&2; exit 1; }
+[ ! -e "$(p /etc/ssh/sshd_config)" ] || { echo "[seal-image] FATAL: sshd_config survived" >&2; exit 1; }
+! ls "$(p /etc/ssh)"/ssh_host_* >/dev/null 2>&1 || { echo "[seal-image] FATAL: host keys survived" >&2; exit 1; }
+[ ! -s "$(p /etc/machine-id)" ] || { echo "[seal-image] FATAL: machine-id not empty" >&2; exit 1; }
 if live && ss -tlnH 2>/dev/null | grep -qE ':22\b|:23\b|:5985\b|:5986\b'; then
-  echo "[seal-ami2] FATAL: a shell port is still listening" >&2; exit 1
+  echo "[seal-image] FATAL: a shell port is still listening" >&2; exit 1
 fi
 log "seal complete. Target has zero ingress and normalized bytes."

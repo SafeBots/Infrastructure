@@ -73,7 +73,7 @@
       # Build the SEALED (production) image:   nix build .#<cloud>
       # Build the BUILDER (SSH-ingress) image: nix build .#<cloud>-builder
       #
-      # The builder is booted, sealed by attestation/ami2-seal/seal-ami2.sh
+      # The builder is booted, sealed by attestation/image-seal/seal-image.sh
       # (which removes SSH + normalizes nondeterminism), and the sealed result
       # is registered as the bootable cloud image. Same NixOS closure for every
       # cloud; only the disk format + registration API differ. AWS/GCP/Azure

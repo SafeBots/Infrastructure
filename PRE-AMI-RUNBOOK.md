@@ -72,14 +72,14 @@ nix build .#ami1                 # (.#gce1 / .#azure1 / .#oci1 per cloud)
 # 2. SSH in and run the seal — tears SSH back down, removes machine identity,
 #    normalizes every enumerated nondeterminism source (mtimes, host keys,
 #    machine-id, logs, seeds, leases, cloud-init, caches, tmp), EXCEPT /nix/store.
-ssh builder@ami1-instance 'sudo /path/to/attestation/ami2-seal/seal-ami2.sh'
+ssh builder@ami1-instance 'sudo /path/to/attestation/image-seal/seal-image.sh'
 
 # 3. Image the sealed instance as AMI-2 — the attested production image, zero ingress.
 
 # 4. PROVE it's deterministic before trusting the measurement:
-attestation/ami2-seal/verify-ami2-reproduces.sh <ami1-build-A> <ami1-build-B>
+attestation/image-seal/verify-ami2-reproduces.sh <ami1-build-A> <ami1-build-B>
 #    diffoscope must report ZERO diff. A diff names a nondeterminism source that
-#    escaped the scrub — add it to seal-ami2.sh + the checklist, re-run.
+#    escaped the scrub — add it to seal-image.sh + the checklist, re-run.
 ```
 
 Only AMI-2's measurement enters the M-of-N-blessed approved set. AMI-1 is a
@@ -99,15 +99,15 @@ nix build .#ami1                 # (.#gce1 / .#azure1 / .#oci1 per cloud)
 # 2. SSH in and run the seal — tears SSH back down, removes machine identity,
 #    normalizes every enumerated nondeterminism source (mtimes, host keys,
 #    machine-id, logs, seeds, leases, cloud-init, caches, tmp), EXCEPT /nix/store.
-ssh builder@ami1-instance 'sudo /path/to/attestation/ami2-seal/seal-ami2.sh'
+ssh builder@ami1-instance 'sudo /path/to/attestation/image-seal/seal-image.sh'
 
 # 3. Image the sealed instance as AMI-2 — the attested production image, zero ingress.
 #    (aws ec2 create-image / gcloud compute images create / az image create / oci ...)
 
 # 4. PROVE it's deterministic before trusting the measurement:
-attestation/ami2-seal/verify-ami2-reproduces.sh <ami1-build-A> <ami1-build-B>
+attestation/image-seal/verify-ami2-reproduces.sh <ami1-build-A> <ami1-build-B>
 #    diffoscope must report ZERO diff. A diff names a nondeterminism source that
-#    escaped the scrub — add it to seal-ami2.sh + the checklist, re-run.
+#    escaped the scrub — add it to seal-image.sh + the checklist, re-run.
 ```
 
 Only AMI-2's measurement goes into the M-of-N-blessed approved set. AMI-1 is a

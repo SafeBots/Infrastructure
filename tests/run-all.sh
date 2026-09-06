@@ -31,8 +31,8 @@ if node cli/safebox-models/test/test-cli.js >/dev/null 2>&1; then ok "safebox-mo
 if node docker/test/testStmValidators.js >/dev/null 2>&1; then ok "docker STM validators"; else no "docker STM validators"; fi
 if python3 docker/test/testSeccompProfiles.py >/dev/null 2>&1; then ok "seccomp/apparmor profiles"; else no "seccomp/apparmor profiles"; fi
 if python3 docker/test/testPhpSandbox.py >/dev/null 2>&1; then ok "php-fpm systemd sandbox"; else no "php-fpm systemd sandbox"; fi
-if python3 attestation/ami2-seal/test-seal-coverage.py >/dev/null 2>&1; then ok "AMI-2 seal coverage"; else no "AMI-2 seal coverage"; fi
-if bash attestation/ami2-seal/test-determinism.sh >/dev/null 2>&1; then ok "AMI-2 seal DETERMINISM (seal twice, byte-identical)"; else no "AMI-2 seal determinism"; fi
+if python3 attestation/image-seal/test-seal-coverage.py >/dev/null 2>&1; then ok "image seal coverage"; else no "image seal coverage"; fi
+if bash attestation/image-seal/test-determinism.sh >/dev/null 2>&1; then ok "image seal DETERMINISM (seal twice, byte-identical)"; else no "AMI-2 seal determinism"; fi
 if python3 storage/test/testObjectBackend.py >/dev/null 2>&1; then ok "object storage backend invariants"; else no "object storage backend invariants"; fi
 if bash attestation/storage-mappings/test-mapping-approval.sh >/dev/null 2>&1; then ok "object storage M-of-N mapping gate"; else no "object storage M-of-N mapping gate"; fi
 if bash attestation/app-layers/test-app-layer.sh >/dev/null 2>&1; then ok "layered blessing (org app layers + additive-only)"; else no "layered blessing (org app layers + additive-only)"; fi

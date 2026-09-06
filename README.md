@@ -133,7 +133,7 @@ The flow is the same everywhere; only the image format, the import/register comm
 **The common flow (every cloud):**
 
 1. **Build** the builder image from the pinned flake: `nix build .#<cloud>-builder`.
-2. **Boot it** as a throwaway, then **seal** it — this removes SSH and every console/guest agent and normalizes nondeterminism: `attestation/ami2-seal/seal-ami2.sh --rootfs <mounted-image-dir>`. (See [`attestation/ami2-seal/README.md`](attestation/ami2-seal/README.md).)
+2. **Boot it** as a throwaway, then **seal** it — this removes SSH and every console/guest agent and normalizes nondeterminism: `attestation/image-seal/seal-image.sh --rootfs <mounted-image-dir>`. (See [`attestation/image-seal/README.md`](attestation/image-seal/README.md).)
 3. **Register** the sealed image as a custom image / marketplace image in the cloud (commands below).
 4. **Launch** an instance from the sealed image **with confidential compute enabled** (the per-cloud flags below — this is what turns on SEV-SNP encrypted RAM).
 5. **Attest**: fetch the instance's attestation and confirm it matches the reference measurement (`attestation/verify/verify-attestation.py --cloud <cloud>`, reference from `attestation/measure/precompute-measurement.py --cloud <cloud>`; steps in [`attestation/TURN3-ATTESTATION-RUNBOOK.md`](attestation/TURN3-ATTESTATION-RUNBOOK.md)).
@@ -154,20 +154,20 @@ Confidential compute must be enabled **at launch** on every cloud — it cannot 
 
 For the full launch/fetch-quote/compare detail per cloud — including the exact attestation trust chains — see [`Nix.md`](Nix.md) and [`attestation/TURN3-ATTESTATION-RUNBOOK.md`](attestation/TURN3-ATTESTATION-RUNBOOK.md). (Building the sealed images and launching real confidential instances requires a Nix builder and cloud accounts; the pinning/build gate is [`nixos/TURN1-RUNBOOK.md`](nixos/TURN1-RUNBOOK.md).)
 
-## How the two-AMI construction works (and why)
+## How the two-image construction works (and why)
 
 The last thing a hardened image must do is remove the final way in — SSH, and any cloud console or guest-agent shell — so that a running box has no interactive ingress at all. But you cannot build an image with no way in *and* configure it during the build, so the image is produced in two stages:
 
-- **AMI-1, the builder** — a NixOS image whose only ingress is SSH. You boot it, and it is disposable. It is the *builder*, not the thing anyone attests or ships.
-- **AMI-2, the attested image** — produced by running the deterministic **seal** (`attestation/ami2-seal/seal-ami2.sh`) against the builder: it removes sshd and host keys, scrubs SSM/waagent/google-guest-agent and every console agent, empties machine-id, logs, leases, and tmp, and normalizes every inode timestamp to a fixed epoch — **excluding** `/nix/store`, whose paths are content-addressed and must keep their canonical timestamps. The result has no ingress and a **deterministic measurement**: seal the same builder twice and the sealed images are byte-identical.
+- **Image 1, the builder** — a NixOS image whose only ingress is SSH. You boot it, and it is disposable. It is the *builder*, not the thing anyone attests or ships.
+- **Image 2, the attested image** — produced by running the deterministic **seal** (`attestation/image-seal/seal-image.sh`) against the builder: it removes sshd and host keys, scrubs SSM/waagent/google-guest-agent and every console agent, empties machine-id, logs, leases, and tmp, and normalizes every inode timestamp to a fixed epoch — **excluding** `/nix/store`, whose paths are content-addressed and must keep their canonical timestamps. The result has no ingress and a **deterministic measurement**: seal the same builder twice and the sealed images are byte-identical.
 
 This two-stage split is what makes the attested measurement deterministic *by construction* rather than by hoping an entire OS image happens to be bit-reproducible (it is only ~91% so, which is useless for a hash — a PCR needs 100%). The builder can be messy; the seal constant-ises everything that varies; the sealed image is the reproducible, ingress-free, attestable artifact.
 
-An important precision: **the attested measurement is of the actual snapshotted AMI-2**, not of a theoretical reproducible build. We do not rely on NixOS to produce a byte-identical image from scratch — we produce a real image, seal it (deterministically removing SSH and normalizing nondeterminism), snapshot it, and that snapshot's hash is what the TPM measures and what the auditor quorum blesses. The reproducible NixOS build is for *comparison and verification* — an independent party rebuilds from the flake, seals their build, and compares the result against the blessed measurement. If the hashes match, the image is verified. But the thing that's attested and running is always the *actual snapshot*, not an abstract "reproducible closure." This distinction matters because it means the system works even if NixOS reproducibility has small gaps — the seal normalizes the remaining nondeterminism (inode timestamps, logs, machine-id, leases), and the sealed result is the deterministic artifact.
+An important precision: **the attested measurement is of the actual snapshotted sealed image**, not of a theoretical reproducible build. We do not rely on NixOS to produce a byte-identical image from scratch — we produce a real image, seal it (deterministically removing SSH and normalizing nondeterminism), snapshot it, and that snapshot's hash is what the TPM measures and what the auditor quorum blesses. The reproducible NixOS build is for *comparison and verification* — an independent party rebuilds from the flake, seals their build, and compares the result against the blessed measurement. If the hashes match, the image is verified. But the thing that's attested and running is always the *actual snapshot*, not an abstract "reproducible closure." This distinction matters because it means the system works even if NixOS reproducibility has small gaps — the seal normalizes the remaining nondeterminism (inode timestamps, logs, machine-id, leases), and the sealed result is the deterministic artifact.
 
 The seal checks for every known cloud agent that could provide interactive access across all six clouds: SSM, WALinuxAgent, google-guest-agent, EC2 Instance Connect, Google OS Login, Google OS Config Agent, Azure Arc (azcmagent), OCI utils/ocid, and Alibaba Cloud Assistant — and fails the seal if any is present. On NixOS these are never in the closure (they're not in `environment.systemPackages`), but the seal runs on the *actual image* as belt-and-suspenders, because the measurement is of the actual image, not the closure definition.
 
-The same NixOS config produces a builder and a sealed image for every supported cloud (AWS, GCP, Azure, Oracle, IBM, Alibaba) — only the disk format and the TPM/attestation particulars differ. Full detail: [`Nix.md`](Nix.md), [`attestation/ami2-seal/README.md`](attestation/ami2-seal/README.md).
+The same NixOS config produces a builder and a sealed image for every supported cloud (AWS, GCP, Azure, Oracle, IBM, Alibaba) — only the disk format and the TPM/attestation particulars differ. Full detail: [`Nix.md`](Nix.md), [`attestation/image-seal/README.md`](attestation/image-seal/README.md).
 
 ## What this repo is
 
@@ -596,7 +596,7 @@ The Infrastructure layer does NOT defend against:
 - AWS root cert verified at every cold start AND at install time
 
 **Zero interactive shell access on the production AMI**
-- SSH removed from AMI-B (see "The Two-AMI Model" in [`aws/docs/AUDIT.md`](aws/docs/AUDIT.md))
+- SSH removed from AMI-B (see "The Two-image Model" in [`aws/docs/AUDIT.md`](aws/docs/AUDIT.md))
 - SSM agent removed
 - All TTY logins disabled
 - telnetd / RSH / VNC / FTP / TFTP / Cockpit removed (CVE-2026-32746 mitigated)
@@ -765,13 +765,13 @@ Nix evaluator and exits non-zero on any failure. Latest run: **42 suites, 0fail
   service carries a `SystemCallFilter` (seccomp BPF) + filesystem sandbox; the
   test asserts it's present and that neither known-breaking setting
   (`~@resources`, forced W^X) is reintroduced. Pass.
-- **Two-AMI seal coverage + DETERMINISM** — the seal is asserted to neutralize
+- **Two-image seal coverage + DETERMINISM** — the seal is asserted to neutralize
   every enumerated nondeterminism source and preserve the `/nix/store`
   exclusion; **and a determinism test seals two builds that differ in every
   nondeterminism class and proves the sealed trees are byte-identical, the
   closure is preserved, and the check catches an uncovered source.** This is
   the load-bearing attestation property, tested every run. Pass.
-  (`attestation/ami2-seal/`)
+  (`attestation/image-seal/`)
 - **Model-runner unit tests** — all **13** runners' `test_runner.py`
   (translation, capacity, headers, HMAC delegation). Pass.
 - **HMAC cross-repo parity + interop** — a request signed the
@@ -821,12 +821,12 @@ Not failures; outside a CI container's reach. Do before an AMI cut:
   input is an intentional `PIN_ME_TO_A_COMMIT_SHA` placeholder with no
   `flake.lock`, and `cache.nixos.org` is unreachable from CI. Nix is validated
   only to brace/`let`-`in` balance.
-- **Two-AMI reproducibility (`verify-ami2-reproduces.sh`)** — Nix is ~91%
+- **Two-image reproducibility (`verify-ami2-reproduces.sh`)** — Nix is ~91%
   bit-reproducible, not 100%, and a PCR needs 100%. So the attested image
   (AMI-2) is produced by sealing an SSH-only builder (AMI-1) with an auditable
   scrub that constant-ises the varying fields. Proving zero-diff needs two real
   builds + diffoscope on a build host — run it before trusting the AMI-2
-  measurement. (`attestation/ami2-seal/README.md`)
+  measurement. (`attestation/image-seal/README.md`)
 - **System smoke test** (`system/test/smoke.js`) — a live-service integration
   test (HTTP on :7799); needs the running component, so it's skipped in CI and
   run by hand against a live box.

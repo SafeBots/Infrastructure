@@ -3,7 +3,7 @@
 and preserves the /nix/store exclusion. Guards the checklist against drift."""
 import json, os, sys, re
 D = os.path.dirname(os.path.abspath(__file__))
-seal = open(os.path.join(D, "seal-ami2.sh")).read()
+seal = open(os.path.join(D, "seal-image.sh")).read()
 chk  = json.load(open(os.path.join(D, "nondeterminism-checklist.json")))
 fails = []
 def check(c, m):

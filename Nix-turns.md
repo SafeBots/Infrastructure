@@ -34,7 +34,7 @@ The four Node components (system, dnsclient, autohost, model supply chain) insta
 
 The one part that cannot be faked in CI: does *our* sealed image produce a valid attestation on *each* cloud's confidential silicon. Do it in maturity order.
 
-For each cloud: `nix build .#<cloud>-builder` → register → boot a confidential instance → run `attestation/ami2-seal/seal-ami2.sh` → re-register the sealed image → boot it confidential → confirm three things: (1) it boots and networks; (2) the vTPM/NitroTPM (or SEV-SNP report) produces a valid attestation whose signature chains to the hardware root; (3) the PCRs (or launch measurement) equal the reference measurement independently computed from the pinned source.
+For each cloud: `nix build .#<cloud>-builder` → register → boot a confidential instance → run `attestation/image-seal/seal-image.sh` → re-register the sealed image → boot it confidential → confirm three things: (1) it boots and networks; (2) the vTPM/NitroTPM (or SEV-SNP report) produces a valid attestation whose signature chains to the hardware root; (3) the PCRs (or launch measurement) equal the reference measurement independently computed from the pinned source.
 
 - **AWS first** (lowest risk — we already attest via `/dev/nsm`; validate the Nix UKI + `nitro-tpm-pcr-compute` reference PCRs match live).
 - **GCP, Azure next** (mature vTPM + SEV-SNP; go-tpm-tools / MAA).
@@ -51,7 +51,7 @@ Anything missing (a kernel module, an agent) is added to the flake declaratively
 
 Make it a single operable flow and align every claim in the repo with the now-true reality.
 
-- Rewrite `aws/scripts/build-ami.sh` (rename — it is no longer AMI-only) into a per-cloud pipeline: `nix build .#<cloud>-builder` → boot → `seal-ami2.sh` → register sealed image → (optional) submit to that cloud's marketplace.
+- Rewrite `aws/scripts/build-ami.sh` (rename — it is no longer AMI-only) into a per-cloud pipeline: `nix build .#<cloud>-builder` → boot → `seal-image.sh` → register sealed image → (optional) submit to that cloud's marketplace.
 - Wire the per-instance identity step: on first boot, derive the AK from the instance EK, seal the box's signing key to the blessed measurement, and register the instance's attestation with the control plane (generalizing what dnsclient does on AWS today to every cloud's vTPM).
 - Run `verify-ami2-reproduces.sh` with diffoscope on two independent builds per cloud to confirm byte-identical sealed output on real images.
 - Delete `install-base.sh` and the dnf branch. Update `README.md` (base is NixOS, reproducible, six clouds, attested), fix the repo tagline so "based on NixOS" is finally true, drop the "detect distro and dnf/apt install" bootstrap step, and re-point the LICENSE's "recompile it and verify that it is correct" promise at the now-reproducible artifact.

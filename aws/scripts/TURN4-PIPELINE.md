@@ -29,7 +29,7 @@ it with a per-cloud pipeline over the flake:
 build.sh <cloud>          # cloud in: aws gcp azure oci ibm alibaba
   1. nix build .#<cloud>-builder        # reproducible SSH-ingress builder image
   2. launch builder, get address
-  3. ssh in, run attestation/ami2-seal/seal-ami2.sh   # remove SSH, normalize
+  3. ssh in, run attestation/image-seal/seal-image.sh   # remove SSH, normalize
   4. image the sealed rootfs -> the cloud's format
   5. register the sealed image (custom image / marketplace)
   6. record the image id + its precomputed reference measurement
@@ -64,7 +64,7 @@ means a signing key minted on a blessed box cannot be extracted to another box.
 ## Step 3 — Prove reproducibility on real images
 
 ```
-verify-ami2-reproduces.sh   # already in attestation/ami2-seal/
+verify-ami2-reproduces.sh   # already in attestation/image-seal/
   build .#<cloud>-builder twice independently
   seal both
   diffoscope the sealed rootfs trees -> expect ZERO diff

@@ -3,20 +3,20 @@
 #
 # "AMI-2 is deterministic" is TESTED, not assumed: seal two independent AMI-1
 # rootfs trees and compare. Zero diff = the scrub covered every nondeterminism
-# source. A diff names the source that escaped; add it to seal-ami2.sh +
+# source. A diff names the source that escaped; add it to seal-image.sh +
 # nondeterminism-checklist.json and re-run.
 #
 # Usage: verify-ami2-reproduces.sh <ami1-rootfs-A> <ami1-rootfs-B>
 #   A and B are two independent AMI-1 builds (or mounted clones). Each is sealed
-#   in place via seal-ami2.sh --rootfs, then compared.
+#   in place via seal-image.sh --rootfs, then compared.
 set -euo pipefail
 A="${1:?need first AMI-1 rootfs}"; B="${2:?need second AMI-1 rootfs}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 echo "[verify] sealing A ($A)"
-SAFEBOX_FIXED_EPOCH="${SAFEBOX_FIXED_EPOCH:-1704067200}" bash "$HERE/seal-ami2.sh" --rootfs "$A"
+SAFEBOX_FIXED_EPOCH="${SAFEBOX_FIXED_EPOCH:-1704067200}" bash "$HERE/seal-image.sh" --rootfs "$A"
 echo "[verify] sealing B ($B)"
-SAFEBOX_FIXED_EPOCH="${SAFEBOX_FIXED_EPOCH:-1704067200}" bash "$HERE/seal-ami2.sh" --rootfs "$B"
+SAFEBOX_FIXED_EPOCH="${SAFEBOX_FIXED_EPOCH:-1704067200}" bash "$HERE/seal-image.sh" --rootfs "$B"
 
 echo "[verify] comparing sealed trees (expect: no differences)"
 # Prefer diffoscope if present (names the exact differing field); fall back to

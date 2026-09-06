@@ -34,7 +34,7 @@ Both are NixOS closures; the outer host (hosts/sandbox-outer.nix) composes the b
 
 ```
 # boot the outer builder, then:
-attestation/ami2-seal/seal-ami2.sh --rootfs <mounted-outer-image>
+attestation/image-seal/seal-image.sh --rootfs <mounted-outer-image>
 ```
 
 After sealing, the outer host has no SSH and — being NixOS — no package manager: it cannot install anything or be changed at runtime without rebuilding the closure (which changes the measurement and fails attestation). This is what makes it a trustworthy container for possibly-hostile inner code.

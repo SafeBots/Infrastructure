@@ -23,7 +23,7 @@ sudo bash aws/scripts/components/base/install-base.sh
 sudo bash aws/scripts/components/system/install-system.sh
 
 # 5. Seal (remove SSH, normalize nondeterminism, assert no forbidden agents)
-sudo bash attestation/ami2-seal/seal-ami2.sh
+sudo bash attestation/image-seal/seal-image.sh
 
 # 6. Create the AMI from the sealed instance
 aws ec2 create-image --instance-id <instance-id> --name "safebox-sealed-$(date +%Y%m%d)"
@@ -80,17 +80,17 @@ nix build .#ami-builder  # AWS builder (SSH-ingress, disposable)
 
 **Status:** the flake, all modules, and all host configs are written and parser-verified. The parity with the dnf base is proven (`nixos/PARITY.md`). What's gated is the first real build — step 1–2 above (~30 min on a Nix machine). See [`nixos/TURN1-RUNBOOK.md`](nixos/TURN1-RUNBOOK.md) for the copy-pasteable steps with every blocker pre-triaged, and [`Nix-turns.md`](Nix-turns.md) for the full 4-turn plan.
 
-**What the NixOS path gives you that the dnf path doesn't:** reproducible measurements (independent verification), all six clouds from one config, the two-AMI construction (builder → seal → attested image) with deterministic sealing, and the multi-cloud attestation story. This is the production target.
+**What the NixOS path gives you that the dnf path doesn't:** reproducible measurements (independent verification), all six clouds from one config, the two-image construction (builder → seal → attested image) with deterministic sealing, and the multi-cloud attestation story. This is the production target.
 
-## The two-AMI construction (both paths)
+## The two-image construction (both paths)
 
 Both paths produce a sealed image the same way:
 
-1. **AMI-1, the builder** — has SSH so you can configure it. Disposable.
-2. **The seal** (`attestation/ami2-seal/seal-ami2.sh`) — removes SSH, host keys, all cloud agents (SSM, WALinuxAgent, google-guest-agent, EC2 Instance Connect, OS Login, Azure Arc, OCI agent, Alibaba assistant), serial consoles (ttyS0-3, hvc0, ttyAMA0), emergency/rescue shells, logs, caches, machine-id, and normalizes all timestamps to a fixed epoch. Asserts nothing forbidden survived.
-3. **AMI-2, the attested image** — the snapshot of the sealed builder. This is what the TPM measures. No SSH, no console, no shell, no package manager, no way in.
+1. **Image 1, the builder** — has SSH so you can configure it. Disposable.
+2. **The seal** (`attestation/image-seal/seal-image.sh`) — removes SSH, host keys, all cloud agents (SSM, WALinuxAgent, google-guest-agent, EC2 Instance Connect, OS Login, Azure Arc, OCI agent, Alibaba assistant), serial consoles (ttyS0-3, hvc0, ttyAMA0), emergency/rescue shells, logs, caches, machine-id, and normalizes all timestamps to a fixed epoch. Asserts nothing forbidden survived.
+3. **Image 2, the attested image** — the snapshot of the sealed builder. This is what the TPM measures. No SSH, no console, no shell, no package manager, no way in.
 
-The attested measurement is of the **actual snapshotted AMI-2**, not a theoretical reproducible build. The reproducible NixOS build is for comparison and verification — an independent party rebuilds, seals, and compares. The thing that's attested and running is the actual snapshot.
+The attested measurement is of the **actual snapshotted sealed image**, not a theoretical reproducible build. The reproducible NixOS build is for comparison and verification — an independent party rebuilds, seals, and compares. The thing that's attested and running is the actual snapshot.
 
 ## The sandbox variant (optional)
 

@@ -16,10 +16,10 @@
 
 {
   # ---- No SSH (install-base.sh Tier 2 removal) ---------------------------
-  # This is the AMI-2 (attested, production) stance: zero ingress. The AMI-1
+  # This is the sealed image (attested, production) stance: zero ingress. The Image 1 (the builder)
   # BUILDER profile (hosts/ami1-builder.nix) re-enables SSH as its ONLY ingress
-  # so an operator can run attestation/ami2-seal/seal-ami2.sh, which tears SSH
-  # back down and normalizes nondeterminism to produce the attested AMI-2.
+  # so an operator can run attestation/image-seal/seal-image.sh, which tears SSH
+  # back down and normalizes nondeterminism to produce the attested sealed image.
   services.openssh.enable = false;
 
   # ---- No cloud remote-shell agents --------------------------------------
@@ -49,7 +49,7 @@
   # ---- No cloud-console agents that could spawn interactive sessions -----
   # NixOS cloud images don't ship these by default (unlike vendor AMIs), but
   # assert their absence so a future cloud module can't silently add one.
-  # The seal (seal-ami2.sh) also checks for all of these on the ACTUAL image
+  # The seal (seal-image.sh) also checks for all of these on the ACTUAL image
   # as belt-and-suspenders.
   #
   # AWS:     EC2 Serial Console (ttyS0 disabled + mutableUsers=false + root locked)

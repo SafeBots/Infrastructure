@@ -1,7 +1,7 @@
 # hosts/ami1-builder.nix — the AMI-1 "builder" profile.
 #
 # AMI-1 is the ONLY image with an ingress channel, and that channel is SSH and
-# NOTHING ELSE. You boot AMI-1, SSH in, run attestation/ami2-seal/seal-ami2.sh,
+# NOTHING ELSE. You boot AMI-1, SSH in, run attestation/image-seal/seal-image.sh,
 # and image the result as AMI-2 (the attested production image with zero ingress).
 #
 # The point of a dedicated builder profile: the thing that gets attested (AMI-2)
@@ -28,7 +28,7 @@
       AllowTcpForwarding = false;          # no tunneling out
       AllowAgentForwarding = false;
     };
-    # Host keys are generated at boot and REMOVED by seal-ami2.sh — they must not
+    # Host keys are generated at boot and REMOVED by seal-image.sh — they must not
     # persist into AMI-2 (they'd be per-instance nondeterministic bytes).
   };
   # SSH port open ONLY on AMI-1. AMI-2's hardening.nix opens only 80/443.
