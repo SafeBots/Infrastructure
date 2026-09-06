@@ -29,12 +29,40 @@
   # If a cloud module tries to enable an agent that offers run-command/shell,
   # override it to false in the host file.
 
-  # ---- No getty / serial-getty / debug-shell (Tier 4) --------------------
+  # ---- No getty / serial-getty / debug-shell / emergency shell (Tier 4) ---
+  # EVERY interactive-access path must be disabled. A single missed serial
+  # device or emergency-mode shell is a backdoor that bypasses the entire
+  # "no SSH, no console, no shell" guarantee.
   systemd.services."getty@".enable = false;
-  systemd.services."serial-getty@ttyS0".enable = false;
-  systemd.services."debug-shell".enable = false;
+  systemd.services."serial-getty@ttyS0".enable = false;   # AWS EC2 Serial Console
+  systemd.services."serial-getty@ttyS1".enable = false;   # secondary serial ports
+  systemd.services."serial-getty@ttyS2".enable = false;
+  systemd.services."serial-getty@ttyS3".enable = false;
+  systemd.services."serial-getty@hvc0".enable  = false;   # Xen / KVM virtio console (GCP, OCI)
+  systemd.services."serial-getty@ttyAMA0".enable = false; # ARM serial (Graviton, Ampere)
+  systemd.services."debug-shell".enable = false;          # systemd debug shell (root)
+  systemd.services."rescue".enable = false;               # rescue.service → root shell
+  systemd.services."emergency".enable = false;            # emergency.service → root shell
   # Also drop autovt so no virtual-terminal login is spawned.
   systemd.services."autovt@".enable = false;
+
+  # ---- No cloud-console agents that could spawn interactive sessions -----
+  # NixOS cloud images don't ship these by default (unlike vendor AMIs), but
+  # assert their absence so a future cloud module can't silently add one.
+  # The seal (seal-ami2.sh) also checks for all of these on the ACTUAL image
+  # as belt-and-suspenders.
+  #
+  # AWS:     EC2 Serial Console (ttyS0 disabled + mutableUsers=false + root locked)
+  #          EC2 Instance Connect (injects SSH keys via metadata — not in closure)
+  #          SSM Agent (remote shell — not in closure, asserted below)
+  # GCP:     google-guest-agent (serial-port login, OS Login SSH key injection)
+  #          google-oslogin (PAM module that injects SSH keys — not in closure)
+  #          google-osconfig-agent (can run scripts — not in closure)
+  # Azure:   WALinuxAgent (serial console, remote script exec — not in closure)
+  #          azcmagent / Azure Arc (remote shell — not in closure)
+  # OCI:     ocid / oci-utils (serial console agent — not in closure)
+  # IBM:     VNC/serial → blocked by no-getty + locked root
+  # Alibaba: aliyun-service / cloud assistant (remote exec — not in closure)
 
   # ---- No legacy remote-access daemons (Tier 1) --------------------------
   # These are simply not in environment.systemPackages / services, so they're
@@ -103,6 +131,13 @@
     {
       assertion = !(config.services.getty.autologinUser != null);
       message = "Safebox invariant violated: a getty autologin user is set. The attested base must spawn no login prompt (install-base.sh Tier 4).";
+    }
+    {
+      # Serial consoles across ALL clouds: AWS EC2 Serial Console (ttyS0),
+      # GCP/OCI virtio console (hvc0), ARM serial (ttyAMA0). Also rescue and
+      # emergency shells, which give root on boot failure.
+      assertion = !config.users.mutableUsers;
+      message = "Safebox invariant violated: mutableUsers is true. EC2 Serial Console (and equivalents on other clouds) requires a user with a password — mutableUsers=false + locked root blocks it even if the serial device were enabled.";
     }
   ];
 }

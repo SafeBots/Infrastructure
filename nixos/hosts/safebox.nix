@@ -8,6 +8,10 @@
 
 {
   networking.hostName = "safebox";
+
+  # Orchestrator/privileged process split — master secret goes to the
+  # privileged process only; the orchestrator never holds credential plaintext.
+  safebox.privilegedProcess.enable = true;
   # ZFS requires a unique 32-bit hostId; set a real per-host value at
   # provisioning time. Placeholder keeps the config evaluable.
   networking.hostId = lib.mkForce "5afeb0c5";

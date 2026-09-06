@@ -38,6 +38,13 @@ let
     tenants = "/safebox/tenants";
     models  = "/safebox/models";   # model weights (category-2 DATA): encrypted store for the
     # system component's SHA-256-governed /models/install. Runners mount read-only.
+    keys    = "/safebox/keys";     # KEY DATASET — the bootstrap. Tiny (a few KB): holds the
+    # data-key for every other dataset, manifest hashes, identity material, and
+    # (if requested) the break-glass recovery blob. Encrypted under the attestation-
+    # bound root (PolicyAuthorize) — only a blessed Safebox can mount it. This is
+    # what makes key material travel with the data: zfs send -w of keys + data gives
+    # a complete, self-contained, encrypted package that any blessed Safebox can open.
+    # See aws/docs/KEY-CONTINUITY.md.
   };
 
   mkCreate = name: mp: ''

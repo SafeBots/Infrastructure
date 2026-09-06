@@ -41,7 +41,10 @@ for h in "$(p /home)"/*/.ssh; do [ -e "$h" ] && rm -rf "$h"; done 2>/dev/null ||
 # Assert no OTHER remote-shell channel was ever present (fail loud). Check the
 # target's unit files / binaries, not just the running host.
 for bad in telnetd in.telnetd rlogind rshd amazon-ssm-agent ssm-agent \
-           amazon-cloudwatch-agent WALinuxAgent waagent google-guest-agent; do
+           amazon-cloudwatch-agent WALinuxAgent waagent google-guest-agent \
+           ec2-instance-connect google_oslogin google-osconfig-agent \
+           google_guest_agent azcmagent oci-utils ocid aliyun-service \
+           aliyun_assist_service cloud-init-per; do
   if [ -e "$(p /usr/bin/$bad)" ] || [ -e "$(p /usr/sbin/$bad)" ] || \
      [ -e "$(p /lib/systemd/system/$bad.service)" ] || \
      [ -e "$(p /etc/systemd/system/$bad.service)" ]; then

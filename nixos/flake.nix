@@ -52,6 +52,7 @@
       commonModules = [
         ./modules/base.nix
         ./modules/hardening.nix
+            ./modules/privileged-process.nix
         ./modules/zfs.nix
         ./modules/storage-mappings.nix
         ./modules/egress-defaults.nix
@@ -77,6 +78,12 @@
       # is registered as the bootable cloud image. Same NixOS closure for every
       # cloud; only the disk format + registration API differ. AWS/GCP/Azure
       # have native formats; Oracle/IBM/Alibaba import the portable qcow image.
+      #
+      # Attestation anchor is AMD SEV-SNP (encrypted RAM + per-instance key +
+      # AMD-signed report) on ALL clouds -- NOT Nitro Enclaves. AWS additionally
+      # offers NitroTPM measured-boot (PCRs over the UKI); OCI has no Secure Boot
+      # for custom images so it uses the SEV-SNP launch measurement only. See
+      # README "Where it runs" and Nix.md for the per-cloud modes.
       # (nixos-generators is being retired into nixpkgs as of 25.05 — see NIX.md;
       # migrate these to config.system.build.images.<fmt> as a fast-follow.)
       packages.${system} =
@@ -108,6 +115,24 @@
           oci-builder     = mkImage "qcow"   builder;
           ibm-builder     = mkImage "qcow"   builder;
           alibaba-builder = mkImage "qcow"   builder;
+
+          # ---- OPTIONAL inspection sandbox (Variant 2) --------------------
+          # sandbox-outer = the base safebox + the sandbox wrapper (composes
+          # hosts/safebox.nix, adds interceptor + inner-VM launcher). The base
+          # ships by itself via .#ami etc.; this is strictly additive on top.
+          sandbox-outer = nixos-generators.nixosGenerate {
+            inherit system; format = "amazon";
+            modules = commonModules ++ [ ./hosts/sandbox-outer.nix ];
+          };
+          # sandbox-inner = the minimal untrusted-code microVM (single tap,
+          # CA in measured trust store, job runner). Booted by the outer host.
+          sandbox-inner = nixos-generators.nixosGenerate {
+            inherit system; format = "raw";
+            modules = [ ./modules/sandbox-inner.nix {
+              safebox.sandboxInner.enable = true;
+              safebox.sandboxInner.interceptorCaCert = ./hosts/sandbox-ca/interceptor-ca.crt;
+            } ];
+          };
         };
     };
 }

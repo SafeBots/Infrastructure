@@ -36,6 +36,13 @@ if bash attestation/ami2-seal/test-determinism.sh >/dev/null 2>&1; then ok "AMI-
 if python3 storage/test/testObjectBackend.py >/dev/null 2>&1; then ok "object storage backend invariants"; else no "object storage backend invariants"; fi
 if bash attestation/storage-mappings/test-mapping-approval.sh >/dev/null 2>&1; then ok "object storage M-of-N mapping gate"; else no "object storage M-of-N mapping gate"; fi
 if bash attestation/app-layers/test-app-layer.sh >/dev/null 2>&1; then ok "layered blessing (org app layers + additive-only)"; else no "layered blessing (org app layers + additive-only)"; fi
+if bash sandbox/test/test-sandbox-host-invariants.sh >/dev/null 2>&1; then ok "sandbox-host invariants (optional inspection variant)"; else no "sandbox-host invariants (optional inspection variant)"; fi
+if bash sandbox/test/test-sandbox-inner-topology.sh >/dev/null 2>&1; then ok "sandbox-inner topology (one wire to interceptor)"; else no "sandbox-inner topology (one wire to interceptor)"; fi
+if python3 sandbox/test/test-batch-worker.py >/dev/null 2>&1; then ok "sandbox batch lifecycle (teardown always)"; else no "sandbox batch lifecycle (teardown always)"; fi
+if bash sandbox/test/test-sandbox-composition.sh >/dev/null 2>&1; then ok "sandbox composition (base alone, outer composes, addrs agree)"; else no "sandbox composition (base alone, outer composes, addrs agree)"; fi
+if bash attestation/recovery/test-recovery.sh >/dev/null 2>&1; then ok "HKDF break-glass recovery (two-factor, auditable, expiry)"; else no "HKDF break-glass recovery (two-factor, auditable, expiry)"; fi
+if python3 attestation/verify/test-verification-service.py >/dev/null 2>&1; then ok "attested verification service (resolver, governor, determinism, spot-check)"; else no "attested verification service (resolver, governor, determinism, spot-check)"; fi
+if bash nixos/modules/test-privileged-process.sh >/dev/null 2>&1; then ok "privileged process split (master-key isolation, boot order, hardening)"; else no "privileged process split (master-key isolation, boot order, hardening)"; fi
 if python3 nixos/test/testEgress.py >/dev/null 2>&1; then ok "per-process network egress policy"; else no "per-process network egress policy"; fi
 
 sec "Model-runner unit tests (13 runners)"

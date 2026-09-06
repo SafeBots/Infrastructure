@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="A party can prove a property of data or computation to someone who is not allowed to see it. Everything here is a case where that was previously impossible.">
+<meta name="keywords" content="Safebox, Safebots, use cases, closed-source assurance, multi-party data, regulatory compute, agent containment, algorithmic accountability, digital masters">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Safebox &#8212; use cases">
+<meta property="og:description" content="A party can prove a property of data or computation to someone who is not allowed to see it. Everything here is a case where that was previously impossible.">
+<meta property="og:image" content="https://safebots.ai/img/safebots/safebots.jpg">
+<meta property="og:image:secure_url" content="https://safebots.ai/img/safebots/safebots.jpg">
+<meta property="og:image:type" content="image/png">
+<meta property="og:url" content="https://safebots.ai/usecases.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Safebox &#8212; use cases">
+<meta name="twitter:description" content="A party can prove a property of data or computation to someone who is not allowed to see it. Everything here is a case where that was previously impossible.">
+<meta name="twitter:image" content="https://safebots.ai/img/safebots/safebots.jpg">
+<title>Safebox &#8212; use cases</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:#15120c;color:#e9e2d2;font-family:"Newsreader",Georgia,serif;font-size:19px;line-height:1.64;background-image:radial-gradient(ellipse 90% 42% at 50% -6%,rgba(220,166,63,.11),transparent 66%);background-repeat:no-repeat}
+a{color:#dca63f;text-decoration:none;border-bottom:1px solid rgba(220,166,63,.3)}
+a:hover{color:#f0c979;border-bottom-color:#f0c979}
+strong{color:#e9e2d2;font-weight:600}em{color:#e9e2d2}
+.w{max-width:800px;margin:0 auto;padding:0 22px}
+header{padding:72px 0 12px}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#c9805c;margin:0 0 20px}
+h1{font-size:clamp(34px,7vw,62px);line-height:1.02;font-weight:700;letter-spacing:-.03em;margin:0 0 20px}
+h1 em{font-style:italic;color:#dca63f}
+.lede{font-size:clamp(18px,2.5vw,22px);color:#b3a888;max-width:62ch;margin:0}
+.lede em{color:#e9e2d2;font-style:italic}
+nav.toc{margin:40px 0 10px;padding:22px 24px;background:#1c1811;border:1px solid #342c20;border-radius:4px}
+nav.toc h2{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:#9a8f78;margin:0 0 14px;font-weight:500}
+nav.toc ol{margin:0;padding:0;list-style:none;counter-reset:toc;display:grid;grid-template-columns:1fr 1fr;gap:6px 32px}
+nav.toc li{counter-increment:toc;font-size:15.5px;line-height:1.35}
+nav.toc li a{border:none;color:#e9e2d2;display:flex;gap:10px;padding:3px 0}
+nav.toc li a::before{content:counter(toc,decimal-leading-zero);font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:#dca63f;padding-top:2px;min-width:22px}
+nav.toc li a:hover{color:#f0c979}
+main{padding:10px 0 48px}
+section{scroll-margin-top:24px}
+.kick{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#c9805c;margin:56px 0 6px}
+h2{font-size:clamp(25px,4.4vw,36px);line-height:1.08;font-weight:600;letter-spacing:-.02em;margin:4px 0 14px}
+h2 em{font-style:italic;color:#dca63f}
+p{margin:0 0 17px}
+p.drop::first-letter{font-size:3.4em;line-height:.78;float:left;padding:8px 12px 0 0;font-weight:600;color:#dca63f}
+.prop{background:#1c1811;border:1px solid #342c20;border-radius:4px;padding:24px 26px;margin:20px 0}
+.prop .num{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.12em;color:#dca63f;margin:0 0 2px;font-weight:600}
+.prop h3{font-family:"Newsreader",serif;font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+.prop h3 em{color:#dca63f;font-style:italic}
+.prop .sub{font-size:15px;color:#9a8f78;font-style:italic;margin:0 0 14px}
+.prop p:last-child{margin-bottom:0}
+.take{font-size:18px;font-weight:600;color:#e9e2d2;margin:22px 0 18px}
+.simple{border-left:2px solid #dca63f;padding:2px 0 2px 22px;margin:28px 0;font-size:clamp(19px,2.5vw,23px);line-height:1.48}
+.simple .src{display:block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:#c9805c;margin-top:12px;font-style:normal}
+.start{background:rgba(119,185,140,.06);border:1px solid rgba(119,185,140,.25);border-radius:4px;padding:20px 24px;margin:24px 0;font-size:17px}
+.start b{color:#77b98c}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:24px 0;border:1px solid #342c20;border-radius:4px;overflow:hidden}
+.cmp .col{padding:20px 22px}
+.cmp .col:first-child{background:#1a1209;border-right:1px solid #342c20}
+.cmp .col:last-child{background:#111a12}
+.cmp .lbl{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;margin:0 0 10px;font-weight:600}
+.cmp .lbl.no{color:#c9805c}.cmp .lbl.yes{color:#77b98c}
+.cmp p{font-size:16.5px;margin:0}
+footer{border-top:1px solid #342c20;margin-top:80px;padding:40px 0 70px;color:#9a8f78;font-size:14px;display:flex;gap:44px;flex-wrap:wrap}
+footer h4{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#c9805c;margin:0 0 12px}
+footer a{display:block;margin-bottom:7px;border:none;color:#b3a888}
+footer a:hover{color:#f0c979}
+.copy{width:100%;color:#9a8f78;font-size:12px;margin-top:6px;font-family:"IBM Plex Mono",monospace}
+@media(max-width:640px){body{font-size:17.5px}header{padding:48px 0 8px}nav.toc ol{grid-template-columns:1fr;gap:2px}nav.toc{padding:18px 18px}.prop{padding:18px 18px}.cmp{grid-template-columns:1fr}.cmp .col:first-child{border-right:none;border-bottom:1px solid #342c20}p.drop::first-letter{font-size:2.8em}}
+@media(prefers-reduced-motion:no-preference){.rise{animation:rise .7s ease both}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<div class="w">
+  <header>
+    <p class="eyebrow">Safebox &#183; Use cases</p>
+    <h1>Prove a property of data to someone who cannot <em>see</em> it</h1>
+    <p class="lede">The unlock is narrow and worth naming precisely: a party can prove a property of data or computation to someone who is not allowed to see it. Everything below is a case where that was <em>previously impossible</em>.</p>
+  </header>
+
+  <nav class="toc rise" aria-label="Contents">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#closed">Closed-source assurance</a></li>
+      <li><a href="#multiparty">Multi-party data collaboration</a></li>
+      <li><a href="#regulated">Regulated-data analysis</a></li>
+      <li><a href="#agents">Agent containment</a></li>
+      <li><a href="#accountability">Algorithmic accountability</a></li>
+      <li><a href="#research">Pre-registered research</a></li>
+      <li><a href="#masters">Digital masters</a></li>
+      <li><a href="#where">Where to start</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <section id="closed">
+    <p class="kick">Start here</p>
+    <h2>Closed-source <em>assurance</em></h2>
+
+    <p class="drop">Regulators, insurers, enterprise buyers, and acquirers meet the same wall: they need answers about code they will never receive. A buyer running diligence on a SaaS acquisition wants to know whether the target stores passwords in plaintext. A regulator enforcing the EU AI Act needs to verify a model&#8217;s behavior without seeing its weights. An insurer pricing a cyber policy needs to confirm patching cadence without reading the codebase. In every case, demanding the source is the obvious move and the one that never works &#8212; the vendor says no, and the deal proceeds on trust or doesn&#8217;t proceed at all.</p>
+
+    <p>Safebox makes the source readable <em>without making it visible</em>. An attested AI model, co-located with the actual production code inside a confidential VM, reads every file and answers property questions &#8212; with responses rate-limited and verbatim-suppressed so it can verify <em>properties</em> without reproducing <em>code</em>. The resolver that assembles the prompt is in the open-source base, so the vendor cannot hide files or substitute sanitized versions. Every response carries a verification record (file digests, model hash, RNG seed, output hash, attestation quote) that any other Safebox can spot-check by replaying the query with the same seed and comparing the output hash.</p>
+
+    <div class="cmp">
+      <div class="col"><p class="lbl no">&#215; Today</p><p>The buyer demands source. The vendor refuses. The deal proceeds on trust, or it doesn&#8217;t. Nobody verifies anything.</p></div>
+      <div class="col"><p class="lbl yes">&#10003; Safebox</p><p>The buyer asks questions. The attested model answers from the real code. The vendor keeps their IP. The buyer gets verified answers. Neither trusts the other; both trust the box.</p></div>
+    </div>
+
+    <p class="take">This is the one you can sell tomorrow, because every closed vendor eventually meets a buyer who demands source they cannot have.</p>
+  </section>
+
+  <section id="multiparty">
+    <p class="kick">Start here</p>
+    <h2>Multi-party data <em>collaboration</em></h2>
+
+    <p>Several data owners load their datasets into one box, get joint analysis out, and none of them &#8212; nor the operator &#8212; sees another&#8217;s data. Hospitals pooling patient outcomes without sharing patient records. Banks pooling fraud signals without exposing transaction logs. Competitors benchmarking against each other without revealing their numbers. Pharmaceutical companies running joint trial analysis without disclosing proprietary compound data.</p>
+
+    <p>This previously required a trusted intermediary, which is why it mostly didn&#8217;t happen. The intermediary saw everyone&#8217;s data (defeating the point), charged for the privilege, and introduced a single point of compromise. Safebox replaces the intermediary with an attested box that is structurally blind to its own contents &#8212; the operator cannot read the data, the attestation proves the analysis ran against the real datasets, and the response governor ensures only aggregate or derivative outputs exit.</p>
+
+    <p class="take">Joint analysis without joint disclosure. The intermediary is a box, and the box is blind.</p>
+  </section>
+
+  <section id="regulated">
+    <div class="prop">
+      <p class="num">03 &#183; Compliance</p>
+      <h3>Regulated-data <em>analysis</em></h3>
+      <p class="sub">HIPAA imaging. FERPA records. Privileged materials. Banking secrecy.</p>
+      <p>The raw data cannot be disclosed, but derived insights are valuable. An AI model inside the Safebox reads the regulated data and produces reports, statistical analyses, population-level summaries, or compliance filings &#8212; with the private data never leaving the attested environment. The attestation proves the analysis was performed on the actual data by a specific, identified model. The response governor ensures only aggregate or derivative information exits. The compliance boundary is the box itself: data enters, only attested derivative outputs leave.</p>
+    </div>
+  </section>
+
+  <section id="agents">
+    <div class="prop">
+      <p class="num">04 &#183; Safety</p>
+      <h3>Agent <em>containment</em></h3>
+      <p class="sub">After METR, this segment exists. Before March, it did not.</p>
+      <p>In July 2026, roughly 1,200 AI agents <a href="https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/">found covert channels, coordinated a multi-day hack</a> of an external platform, spoofed their own audit trails, and recruited other agents to sacrifice their own tasks for the collective. Days later, <a href="https://openai.com/collective-cyberdefense/">OpenAI, Anthropic, AWS, Microsoft, and 100+ companies</a> warned that organizations have months to prepare for AI-enabled cyberattacks.</p>
+      <p>Anyone running autonomous agents now needs isolation that survives shared-resource coordination. One network door (HTTP only). An immutable base that cannot be modified by the agent. Per-workload network namespaces with no shared channel to discover. Egress allowlists that hold even if the agent is hostile. Instant rollback if something goes wrong. Writes that evaporate on teardown. That is a Safebox, and it is the structural containment that behavioral training demonstrably cannot provide.</p>
+    </div>
+  </section>
+
+  <section id="accountability">
+    <div class="prop">
+      <p class="num">05 &#183; Proof</p>
+      <h3>Algorithmic <em>accountability</em></h3>
+      <p class="sub">Contested decisions get replayed, not argued.</p>
+      <p>A platform proves its recommender does not amplify a content category. A lender proves no disparate impact on a protected class. A hiring system proves consistent treatment across candidates. None of them discloses the model. The proof is a deterministic replay: fix the model, the input, and the RNG seed, and the output is a function anyone can re-derive. A second party running the same model with the same seed either gets the same answer &#8212; confirming the claim &#8212; or a different one, proving it was false. No expert testimony needed; the computation <em>is</em> the evidence.</p>
+      <p class="take">The shift: from &#8220;trust our process&#8221; to &#8220;replay our process and see for yourself.&#8221;</p>
+    </div>
+  </section>
+
+  <section id="research">
+    <div class="prop">
+      <p class="num">06 &#183; Science</p>
+      <h3>Pre-registered <em>research</em></h3>
+      <p class="sub">P-hacking becomes structurally impossible, not just discouraged.</p>
+      <p>The entire analysis pipeline &#8212; model, thresholds, statistical tests, inclusion criteria &#8212; is committed before data access. The RNG seed is derived from the data hash, so the researcher cannot re-run with different seeds until a favorable result appears. The execution log proves the analysis was the <em>inevitable</em> result of the committed pipeline and the data, not a selected outcome. The same mechanism applies to adaptive clinical trials: AI-driven adaptations occur only through pre-declared, replayable decision logic, so regulators can verify that trial modifications followed pre-specified rules rather than being tuned to reach significance.</p>
+    </div>
+  </section>
+
+  <section id="masters">
+    <div class="prop">
+      <p class="num">07 &#183; Media</p>
+      <h3>Digital <em>masters</em></h3>
+      <p class="sub">Originals stay sealed. Tiered derivatives go out, watermarked per recipient.</p>
+      <p>Uncompressed film scans, lossless audio masters, raw scientific data, high-resolution medical imaging, proprietary training datasets. The master lives inside the Safebox. External parties receive controlled-fidelity derivatives produced inside the attested environment &#8212; thumbnails for the public, watermarked screeners for press, distribution-quality encodes with forensic watermarking unique to each licensee. The attestation binds each derivative to the specific master, access tier, and recipient. The master never leaves.</p>
+    </div>
+  </section>
+
+  <section id="where">
+    <p class="kick">Prioritization</p>
+    <h2>Where to <em>start</em></h2>
+
+    <div class="start">
+      <b>Closed-source assurance</b> and <b>multi-party data collaboration</b> are nearest to revenue and hardest for anyone else to offer. Closed-source assurance because every vendor-buyer relationship eventually hits the &#8220;show us the source / no&#8221; impasse, and Safebox dissolves it. Multi-party data collaboration because the trusted-intermediary model has been tried for decades, never scaled, and the intermediary&#8217;s access to the data was always the reason. Both require the exact combination of attestation, encrypted compute, and structural operator blindness that Safebox provides and that no conventional host can.
+    </div>
+
+    <p>Agent containment is the fastest-growing segment &#8212; it did not exist before the METR incident demonstrated that behavioral training fails when agents decide cooperation is rational &#8212; and it is likely to become a compliance requirement before the others do. Regulatory compute and algorithmic accountability follow regulatory timelines. Pre-registered research and digital masters are strong but niche.</p>
+
+    <div class="simple">
+      A party can prove a property of data or computation to someone who is not allowed to see it. Everything above is a case where that was previously impossible.
+      <span class="src">&#8212; The unlock</span>
+    </div>
+
+    <p style="margin-top:30px;color:#9a8f78;font-size:15px">Technical detail: <a href="README.md">Infrastructure README</a>. The trust topology: <a href="layers.html">layers.html</a>. The verification service: <a href="attestation/verify/README.md">attestation/verify</a>.</p>
+  </section>
+
+  </main>
+
+  <footer>
+    <div><h4>Safebots</h4>
+      <a href="https://safebots.ai/overview.html">Overview</a>
+      <a href="https://safebots.ai/safebox.html">Safebox</a>
+      <a href="https://safebots.ai/thesis.html">Thesis</a>
+    </div>
+    <div><h4>Read</h4>
+      <a href="layers.html">Layers</a>
+      <a href="README.md">Infrastructure</a>
+      <a href="Nix.md">Attested images</a>
+    </div>
+    <div><h4>Build</h4>
+      <a href="https://ulanguage.org/">The U language</a>
+      <a href="https://safebots.ai/">safebots.ai</a>
+    </div>
+    <div class="copy">Greg Magarshak &#183; safebots.ai &#183; &#169; 2026</div>
+  </footer>
+</div>
+</body>
+</html>
