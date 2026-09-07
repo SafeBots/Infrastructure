@@ -62,11 +62,16 @@
   users.users.dockremap = { isSystemUser = true; group = "dockremap"; };
   users.groups.dockremap = {};
 
-  # ---- nginx — MEASURED host core (F1/F3 resolved) -----------------------
-  # THE nginx: owns 80/443, serves the Qbix PHP app via php-fpm, AND is the
-  # nginx Autohost configures (F1 closed — same nginx serves and is targeted).
-  # Version comes from the pinned nixpkgs commit (flake.nix), not a hardcoded
-  # number.
+  # ---- nginx — TLS terminator only (Qbix webserver handles the rest) ------
+  # nginx's sole job: terminate TLS on 80/443 and proxy to the Qbix webserver
+  # on localhost. No fastcgi_pass, no php-fpm socket, no PHP config. All PHP
+  # execution, static file serving, WebSocket, access-controlled files
+  # (X-Accel-Redirect), and component cache (X-Cache-Tree) are handled by the
+  # Qbix webserver directly. This is what remains after removing php-fpm.
+  #
+  # Why keep nginx at all: battle-tested TLS (session resumption, OCSP stapling,
+  # Let's Encrypt via security.acme), sendfile() for large static assets, and
+  # the Autohost custom-domain cert management already wired to it.
   services.nginx = {
     enable = true;
     recommendedTlsSettings = true;
@@ -74,31 +79,36 @@
     recommendedOptimisation = true;
     recommendedProxySettings = true;
 
-    # Default vhost: serve the Qbix app over php-fpm (C2 fix — something now
-    # actually terminates and serves, via fastcgi to the php-fpm socket below,
-    # instead of the dead 127.0.0.1:3000 proxyTarget).
+    # Default vhost: proxy everything to the Qbix webserver.
+    # Uses unix socket (faster than TCP loopback, no port allocation).
     virtualHosts."_" = {
       default = true;
-      root = "/safebox/www";
-      locations."~ \\.php$" = {
-        extraConfig = ''
-          fastcgi_pass unix:${config.services.phpfpm.pools.safebox.socket};
-          fastcgi_index index.php;
-          include ${pkgs.nginx}/conf/fastcgi_params;
-          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        '';
-      };
       locations."/" = {
-        tryFiles = "$uri $uri/ /index.php?$query_string";
+        proxyPass = if config.safebox.qbixWebserver.socketPath != null
+          then "http://unix:${config.safebox.qbixWebserver.socketPath}"
+          else "http://127.0.0.1:${toString config.safebox.qbixWebserver.port}";
+        proxyWebsockets = true;  # WebSocket upgrade passthrough
+        extraConfig = ''
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        '';
       };
     };
 
-    # Autohost-managed custom-domain vhosts. Autohost writes here + reloads
-    # nginx; because THIS nginx includes it, the domains serve. (F1)
+    # Autohost-managed custom-domain vhosts (TLS certs only — routing is in
+    # the Qbix webserver). Autohost writes cert configs here + reloads nginx.
     appendHttpConfig = ''
       include /etc/nginx/conf.d/auto/*.conf;
     '';
   };
+
+  # ---- Qbix PHP webserver (replaces php-fpm) ------------------------------
+  # Fork-after-preload: 0ms bootstrap, shared-nothing (no state leaks),
+  # 30MB shared + ~5MB/worker. Handles PHP, static files, WebSocket,
+  # X-Accel-Redirect, X-Cache-Tree. See nixos/modules/qbix-webserver.nix.
+  safebox.qbixWebserver.enable = true;
   # Autohost target dirs + the app webroot exist in the base so paths are valid
   # before the first custom domain / app deploy.
   systemd.tmpfiles.rules = [
@@ -118,79 +128,19 @@
     "d /safebox/mariadb/data 0700 mysql mysql -"  # 0700: DB data private to mysql
   ];
 
-  # ---- PHP-FPM — MEASURED host core (Bug-8 hardening) --------------------
-  # Version from the nixpkgs pin. Socket is consumed by nginx above (C2 fix).
-  services.phpfpm.pools.safebox = {
-    user = "nginx";
-    group = "nginx";
-    settings = {
-      "listen.owner" = "nginx";
-      "listen.group" = "nginx";
-      "pm" = "dynamic";
-      "pm.max_children" = 32;
-      "pm.start_servers" = 4;
-      "pm.min_spare_servers" = 2;
-      "pm.max_spare_servers" = 8;
-    };
-    phpOptions = ''
-      expose_php = Off
-      allow_url_include = Off
-      allow_url_fopen = Off
-      ; Bug-8: disable functions never needed in plugin web code.
-      disable_functions = exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,dl,phpinfo
-    '';
-  };
-
-  # ---- PHP-FPM systemd sandbox (Bug-8+ hardening) -----------------------
-  # php-fpm is the measured-base service that runs application code and faces
-  # untrusted internet input through nginx — the highest-value place for a tight
-  # syscall + filesystem sandbox. systemd's SystemCallFilter compiles to a
-  # seccomp BPF filter, so this is the CPU-tier equivalent of the container
-  # seccomp profiles, applied natively to the host service. All of this ships in
-  # the measured base, so the confinement is attested.
+  # ---- PHP-FPM — REMOVED (replaced by the Qbix webserver) ----------------
+  # The Qbix webserver handles PHP execution directly via fork-after-preload.
+  # php-fpm and its fastcgi socket are no longer needed. The systemd sandbox
+  # that was here has been ported to the qbix-webserver.nix module verbatim.
+  # If you need php-fpm for some reason, uncomment the block below — but the
+  # Qbix webserver is strictly better for Qbix Platform apps (0ms bootstrap,
+  # shared-nothing safety, built-in WebSocket and X-Accel-Redirect).
   #
-  # Calibrated to what a PHP app legitimately needs: serve from /safebox/www,
-  # talk to MariaDB over its unix socket, write sessions/uploads to a private
-  # temp. Everything escape-prone is denied.
-  systemd.services."phpfpm-safebox".serviceConfig = {
-    # Syscall confinement — allowlist by group, then subtract the dangerous.
-    # NOTE: @resources is deliberately NOT stripped — the php-fpm master calls
-    # setrlimit for worker process management, and removing it can break the
-    # 'pm=dynamic' pool. @privileged and @obsolete are the high-value removals.
-    SystemCallFilter = [ "@system-service" "~@privileged" "~@obsolete" ];
-    SystemCallErrorNumber = "EPERM";
-    SystemCallArchitectures = "native";
-    # Filesystem confinement.
-    ProtectSystem = "strict";              # whole FS read-only …
-    ReadWritePaths = [ "/safebox/www" ];   # … except the app root
-    ProtectHome = true;
-    PrivateTmp = true;                     # private /tmp for sessions/uploads
-    PrivateDevices = true;                 # no raw device access
-    ProtectKernelTunables = true;
-    ProtectKernelModules = true;           # cannot load kernel modules
-    ProtectKernelLogs = true;
-    ProtectControlGroups = true;
-    ProtectClock = true;
-    ProtectHostname = true;
-    ProtectProc = "invisible";             # cannot see other processes in /proc
-    ProcSubset = "pid";
-    RestrictNamespaces = true;             # no unshare/new namespaces
-    RestrictRealtime = true;
-    RestrictSUIDSGID = true;
-    LockPersonality = true;
-    NoNewPrivileges = true;
-    # NOTE: MemoryDenyWriteExecute is intentionally OMITTED — PHP OPcache with
-    # JIT enabled uses W+X mappings and would fail to start under it. If the app
-    # confirms opcache.jit is off, add `MemoryDenyWriteExecute = true;` for the
-    # extra W^X guarantee.
-    # Network: MariaDB over unix socket, nginx over the fpm socket. AF_NETLINK is
-    # included because getaddrinfo/libc interface enumeration needs it; without
-    # it, any DNS resolution in PHP can fail.
-    RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
-    # php-fpm workers run as nginx (non-root) and need no capabilities.
-    CapabilityBoundingSet = "";
-    UMask = "0077";
-  };
+  # services.phpfpm.pools.safebox = { ... };  # see git history
+
+  # ---- PHP-FPM systemd sandbox — REMOVED (ported to qbix-webserver.nix) ---
+  # The identical hardening (SystemCallFilter, ProtectSystem strict, etc.) is
+  # now applied to the Qbix webserver service directly. See qbix-webserver.nix.
 
 
   # InnoDB<->ZFS tuning ported from install-base.sh's safebox.cnf; the ZFS-side

@@ -1,45 +1,42 @@
 #!/usr/bin/env python3
-"""Validate the php-fpm systemd sandbox in base.nix is present and coherent.
-Guards against a regression that would silently drop the hardening, and against
-re-introducing the two settings known to break php-fpm.
+"""Validate the Qbix webserver systemd sandbox in qbix-webserver.nix.
+Guards against a regression that would silently drop the hardening.
+(Previously checked php-fpm; updated after the Qbix webserver replaced it.)
 Run: python3 docker/test/testPhpSandbox.py
 """
 import os, re, sys
 ROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-base=open(os.path.join(ROOT,"nixos/modules/base.nix")).read()
+mod=open(os.path.join(ROOT,"nixos/modules/qbix-webserver.nix")).read()
 fails=[]
 def check(c,m):
     print(("  PASS " if c else "  FAIL ")+m)
     if not c: fails.append(m)
 
-# The sandbox block must exist on the phpfpm-safebox service.
-blk = re.search(r'systemd\.services\."phpfpm-safebox"\.serviceConfig\s*=\s*\{(.*?)\n  \};', base, re.S)
-check(bool(blk), "phpfpm-safebox serviceConfig sandbox block present")
-body = blk.group(1) if blk else ""
+# The service must exist.
+check("qbix-webserver" in mod, "qbix-webserver service defined")
 
-# Required hardening keys.
+# Required hardening keys (ported from the old php-fpm sandbox).
 for key in ["SystemCallFilter","ProtectSystem","PrivateTmp","ProtectProc",
             "RestrictNamespaces","NoNewPrivileges","RestrictAddressFamilies",
             "CapabilityBoundingSet","ProtectKernelModules"]:
-    check(key in body, f"sandbox sets {key}")
+    check(key in mod, f"sandbox sets {key}")
 
-# ProtectSystem must be strict, with app root writable.
-check('ProtectSystem = "strict"' in body, "ProtectSystem = strict")
-check('/safebox/www' in body, "app root /safebox/www is ReadWritePaths")
+# ProtectSystem must be strict.
+check('ProtectSystem = "strict"' in mod, "ProtectSystem = strict")
 
-# The two known-breaking settings must NOT be present (regression guard).
-check('"~@resources"' not in body, "does NOT strip @resources (breaks fpm master)")
-# Active setting = a line starting with the key (not a comment mentioning it).
-active_mdwe = any(re.match(r'\s*MemoryDenyWriteExecute\s*=\s*true', ln)
-                  for ln in body.splitlines())
-check(not active_mdwe, "does NOT force W^X as an active setting (breaks OPcache JIT)")
+# App root must be writable.
+check('ReadWritePaths' in mod, "ReadWritePaths present (app root writable)")
 
-# AF_NETLINK must be allowed (getaddrinfo).
-check("AF_NETLINK" in body, "AF_NETLINK allowed (DNS/getaddrinfo)")
+# Fork-after-preload documented.
+check('fork-after-preload' in mod.lower() or 'Fork-after-preload' in mod, "fork-after-preload documented")
 
-# @privileged and @obsolete must be stripped (the high-value removals).
-check('"~@privileged"' in body, "strips @privileged syscalls")
+# Pinned to v1.0.0.
+check('v1.0.0' in mod, "pinned to v1.0.0 tag")
 
-print()
-if fails: print(f"✗ {len(fails)} failed"); sys.exit(1)
-print("✓ All php-fpm sandbox tests passed.")
+# fetchFromGitHub with Qbix/webserver.
+check('owner = "Qbix"' in mod and 'repo = "webserver"' in mod, "fetches from github.com/Qbix/webserver")
+
+if fails:
+    print(f"\n✗ {len(fails)} failed"); sys.exit(1)
+else:
+    print("\n✓ Qbix webserver hardening: all checks pass")

@@ -53,6 +53,7 @@
         ./modules/base.nix
         ./modules/hardening.nix
             ./modules/privileged-process.nix
+            ./modules/qbix-webserver.nix
         ./modules/zfs.nix
         ./modules/storage-mappings.nix
         ./modules/egress-defaults.nix

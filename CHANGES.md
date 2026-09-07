@@ -121,3 +121,11 @@ Also added the four-plugin architecture note: Safebox (workflows/tools), Safebot
 **Gap found:** we disabled `serial-getty@ttyS0` but NOT ttyS1-3, hvc0 (Xen/KVM virtio console used by GCP/OCI), ttyAMA0 (ARM/Graviton), rescue.service, or emergency.service. Any of these is an interactive root shell that bypasses the "no SSH, no console" guarantee.
 
 **Fixed:** every serial device across all six clouds is now disabled (ttyS0-3, hvc0, ttyAMA0), plus rescue.service and emergency.service (root shells on boot failure), plus per-cloud documentation of how each console agent is blocked (AWS EC2 Serial Console blocked by ttyS0 disabled + mutableUsers=false + locked root; GCP google-guest-agent not in closure; Azure WALinuxAgent not in closure; OCI/IBM/Alibaba same pattern). Added a mutableUsers assertion (EC2 Serial Console requires a user with a password — mutableUsers=false blocks it even if the serial device were somehow re-enabled).
+
+## 13. Qbix Webserver Replaces php-fpm (NEW — `nixos/modules/qbix-webserver.nix`)
+
+The Qbix webserver (https://github.com/Qbix/webserver) replaces php-fpm as the PHP execution engine. Fork-after-preload architecture: workers inherit loaded classes via copy-on-write (0ms bootstrap vs. 10-50ms on php-fpm), shared-nothing safety (each request is a clean fork, no state leaks), 30MB shared + ~5MB/worker (vs. 30-60MB × N workers on php-fpm). Also handles static files, WebSocket (built in), X-Accel-Redirect (access-controlled file serving), and X-Cache-Tree (component-level cache invalidation with a Merkle tree).
+
+nginx stays as a thin TLS terminator — its only job is TLS + proxy_pass to the Qbix webserver on localhost. The fastcgi_pass, php-fpm pool, socket wiring, and the entire php-fpm systemd sandbox are removed (the identical hardening is ported to the qbix-webserver.nix module).
+
+Pinned to github.com/Qbix/webserver, placeholder hash until v1.0.0 tag. The U webserver (github.com/ULanguageOrg/webserver) is the future replacement once PHP→U transpilation is production-ready.

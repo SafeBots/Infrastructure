@@ -30,7 +30,7 @@ sec "CLI + docker validators"
 if node cli/safebox-models/test/test-cli.js >/dev/null 2>&1; then ok "safebox-models CLI"; else no "safebox-models CLI"; fi
 if node docker/test/testStmValidators.js >/dev/null 2>&1; then ok "docker STM validators"; else no "docker STM validators"; fi
 if python3 docker/test/testSeccompProfiles.py >/dev/null 2>&1; then ok "seccomp/apparmor profiles"; else no "seccomp/apparmor profiles"; fi
-if python3 docker/test/testPhpSandbox.py >/dev/null 2>&1; then ok "php-fpm systemd sandbox"; else no "php-fpm systemd sandbox"; fi
+if python3 docker/test/testPhpSandbox.py >/dev/null 2>&1; then ok "Qbix webserver sandbox (replaces php-fpm)"; else no "Qbix webserver sandbox (replaces php-fpm)"; fi
 if python3 attestation/image-seal/test-seal-coverage.py >/dev/null 2>&1; then ok "image seal coverage"; else no "image seal coverage"; fi
 if bash attestation/image-seal/test-determinism.sh >/dev/null 2>&1; then ok "image seal DETERMINISM (seal twice, byte-identical)"; else no "AMI-2 seal determinism"; fi
 if python3 storage/test/testObjectBackend.py >/dev/null 2>&1; then ok "object storage backend invariants"; else no "object storage backend invariants"; fi
