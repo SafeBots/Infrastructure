@@ -18,16 +18,15 @@ function check(name, cond, detail) {
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
-check('undefined → /app',    sanitize(undefined) === '/app');
-check('null → /app',         sanitize(null) === '/app');
-check('empty string → /app', sanitize('') === '/app');
+check('undefined → /workspace', sanitize(undefined) === '/workspace');
+check('null → /workspace',      sanitize(null) === '/workspace');
+check('empty string → /workspace', sanitize('') === '/workspace');
 
 // ── Happy path ───────────────────────────────────────────────────────────────
-check('plain /app',           sanitize('/app') === '/app');
-check('nested /app/src',      sanitize('/app/src') === '/app/src');
-check('with dots /app/v1.0',  sanitize('/app/v1.0') === '/app/v1.0');
-check('with hyphens',         sanitize('/srv/foo-app/data') === '/srv/foo-app/data');
-check('with underscore',      sanitize('/srv/foo_bar') === '/srv/foo_bar');
+check('plain /workspace',     sanitize('/workspace') === '/workspace');
+check('trailing slash',       sanitize('/workspace/') === '/workspace');
+rejected('/workspace/src',  'reject: subdirectory not supported by the wrapper (fixed --workdir /workspace)');
+rejected('/app',                  'reject: outside /workspace');
 
 // ── Rejections ──────────────────────────────────────────────────────────────
 function rejected(input, label) {
@@ -38,21 +37,21 @@ function rejected(input, label) {
 }
 
 rejected('app',              'reject: not absolute');
-rejected('/app/../etc',      'reject: contains ..');
-rejected('/app;rm -rf /',    'reject: semicolon');
-rejected('/app && evil',     'reject: ampersand');
-rejected('/app | tee',       'reject: pipe');
-rejected('/app$(whoami)',    'reject: command substitution');
-rejected('/app`whoami`',     'reject: backtick');
-rejected('/app\nrm',         'reject: newline');
-rejected('/app\tx',          'reject: tab');
-rejected('/app x',           'reject: space');
-rejected('/app#comment',     'reject: hash');
-rejected('/app\\x',          'reject: backslash');
-rejected('/app/* ',          'reject: glob');
-rejected('/app"x',           'reject: quote');
-rejected("/app'x",           'reject: single quote');
-rejected('/app>out',         'reject: redirection');
+rejected('/workspace/../etc',      'reject: contains ..');
+rejected('/workspace;rm -rf /',    'reject: semicolon');
+rejected('/workspace && evil',     'reject: ampersand');
+rejected('/workspace | tee',       'reject: pipe');
+rejected('/workspace$(whoami)',    'reject: command substitution');
+rejected('/workspace`whoami`',     'reject: backtick');
+rejected('/workspace\nrm',         'reject: newline');
+rejected('/workspace\tx',          'reject: tab');
+rejected('/workspace x',           'reject: space');
+rejected('/workspace#comment',     'reject: hash');
+rejected('/workspace\\x',          'reject: backslash');
+rejected('/workspace/* ',          'reject: glob');
+rejected('/workspace"x',           'reject: quote');
+rejected("/workspace'x",           'reject: single quote');
+rejected('/workspace>out',         'reject: redirection');
 
 // Type/length
 rejected(123,                'reject: not a string');

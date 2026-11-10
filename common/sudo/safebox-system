@@ -1,0 +1,66 @@
+# /etc/sudoers.d/safebox-system
+#
+# This file is the entire root-elevation surface of a safebox. Three
+# identities can become root, each for a fixed list of wrapper paths and
+# nothing else:
+#
+#   %safebox-sys    every tenant instance (safebox-system@<name>, uid
+#                   safebox-sys-<name>, 20000..29999, group safebox-sys): the
+#                   tenant-side wrappers. Each of them derives the calling
+#                   tenant from SUDO_UID (sudo sets it; env_reset does not
+#                   strip it) and refuses any argument that names a different
+#                   tenant, test or dataset, so the group grant is not a
+#                   cross-tenant grant.
+#   safebox-infra   the operator instance (safebox-system.service, uid 990)
+#                   and autovhost: the operator-side wrappers. safebox-container
+#                   is on both lists because create and destroy are the
+#                   operator's and exec is the tenant's; the wrapper itself
+#                   enforces which caller may use which subcommand.
+#   safebox-dns     dnsclient: the TPM quote and the confidential-compute
+#                   report, which registration and announce need.
+#
+# There are no argument patterns here on purpose: sudoers wildcards match
+# shell-style and have let "docker run --detach *" become "any docker run"
+# in the past. sudoers matches the exact executable path and permits any
+# arguments to it, and the wrapper itself is the argument validator: every
+# wrapper rejects anything that does not match its fixed regexes before
+# touching docker, zfs, systemd or the TPM.
+#
+# Both halves are needed: this file decides WHICH programs run as root for
+# WHOM, the wrappers (root-owned, 0755, on the read-only verity root) decide
+# WHAT they will do. An auditor reads this file, then the eleven scripts, and
+# knows the whole privileged surface. See docs/HARDENING-PLAN.md fix 5 and
+# "Per-tenant isolation".
+#
+# env_reset:   a clean environment (no LD_PRELOAD, no PATH games; the wrappers
+#              set PATH themselves anyway). SUDO_UID, SUDO_USER and SUDO_GID
+#              are set by sudo after the reset and are what the wrappers read.
+# use_pty:     the command runs in a pty so log_output can capture it.
+# log_output:  I/O logged to /var/log/sudo-io for the audit trail.
+# !requiretty: the caller is a daemon with no tty.
+
+Cmnd_Alias SAFEBOX_TENANT_WRAPPERS = /opt/safebox/bin/safebox-test-run, \
+                                     /opt/safebox/bin/safebox-test-stop, \
+                                     /opt/safebox/bin/safebox-test-logs, \
+                                     /opt/safebox/bin/safebox-zfs, \
+                                     /opt/safebox/bin/safebox-container
+
+Cmnd_Alias SAFEBOX_OPERATOR_WRAPPERS = /opt/safebox/bin/safebox-container, \
+                                       /opt/safebox/bin/safebox-instance, \
+                                       /opt/safebox/bin/safebox-keyd-reload, \
+                                       /opt/safebox/bin/safebox-nginx-reload, \
+                                       /opt/safebox/bin/safebox-tpm-quote, \
+                                       /opt/safebox/bin/safebox-confidential-report
+
+Cmnd_Alias SAFEBOX_DNS_WRAPPERS = /opt/safebox/bin/safebox-tpm-quote, \
+                                  /opt/safebox/bin/safebox-confidential-report
+
+Defaults!SAFEBOX_TENANT_WRAPPERS env_reset, use_pty, log_output, !requiretty
+Defaults!SAFEBOX_OPERATOR_WRAPPERS env_reset, use_pty, log_output, !requiretty
+Defaults:%safebox-sys !lecture
+Defaults:safebox-infra !lecture
+Defaults:safebox-dns !lecture
+
+%safebox-sys  ALL=(root) NOPASSWD: SAFEBOX_TENANT_WRAPPERS
+safebox-infra ALL=(root) NOPASSWD: SAFEBOX_OPERATOR_WRAPPERS
+safebox-dns   ALL=(root) NOPASSWD: SAFEBOX_DNS_WRAPPERS

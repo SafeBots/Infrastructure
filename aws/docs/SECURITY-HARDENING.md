@@ -292,6 +292,9 @@ After `install-base.sh` runs, the only network access to the instance is:
 - No SSM Session Manager
 - The `system` component (when installed) does NOT listen on any network port. It is a Node.js daemon (`safebox-system.service`) running as the unprivileged `safebox-infra` user; it accepts HMAC-signed JSON over **Unix domain sockets only** — one per managed container at `/run/safebox/containers/<name>.sock` plus one control socket at `/run/safebox/control.sock`. No TCP listener and no exposure outside the host.
 - Application traffic — nginx on 443 with TLS, when configured by the application component (not the base)
+- Inbound TCP SYN packets with IPv4 header options are dropped by the host firewall before any port accept (CVE-2026-98432 mitigation). MPTCP is disabled via sysctl.
+- Kernel module blacklist blocks 40+ unused protocols (SCTP, DCCP, TIPC, etc.), filesystems (cramfs, hfs, udf, etc.) and hardware drivers (USB, FireWire, Bluetooth, wireless). Expanded sysctl hardening disables io_uring, restricts perf_event and userfaultfd, enables SYN cookies, and blocks source routing.
+- On sealed (production) images: SSH is masked via overlay whiteouts (binaries hidden, units masked); `kernel.modules_disabled=1` prevents all module loading after boot; `/proc` is mounted with `hidepid=2` for cross-UID process isolation. These are applied by `safebox-sealed-boot.service`, conditional on `/etc/safebox/sealed`. See `docs/SEALING.md`.
 
 **Outbound (limited by VPC/security-group)**:
 - HTTPS to AWS API endpoints (for IAM-role-based credentials)
@@ -326,8 +329,21 @@ After running `install-base.sh`, the build pipeline runs `scripts/verify-build.s
 - [x] `php -i | grep disable_functions` shows the blocklist
 - [x] `auditctl -l | grep safebox` shows the audit rules loaded
 - [x] `cat /opt/safebox/manifests/base.json` shows the component manifest with `"shellAccessPolicy": "zero-interactive-access"`
+- [x] `/opt/safebox/seal/safebox-seal-image.sh` exists and is executable (seal script installed)
+- [x] `safebox-sealed-boot.service` is enabled (conditional production hardening)
+- [x] On sealed images: `/etc/safebox/sealed` exists, SSH masked via overlay whiteouts at boot
 
 If any of these fail, the AMI build aborts.
+
+---
+
+## Multi-App Isolation
+
+A single Safebox can host multiple applications, each in its own gVisor-sandboxed container with its own volumes, network namespace, and UID range. Inter-container communication is disabled by default (`icc: false`). Each app gets its own MariaDB database with its own credentials, its own Redis key prefix, and its own Typesense collection namespace. A compromised app (even full RCE) can trash its own data but cannot see another app's data, containers, or processes (`hidepid=2`), cannot reach the host kernel (gVisor), and cannot persist changes across reboot (dm-verity). Shared infrastructure services like LLM inference run through a proxy with per-app quotas, and media processing (ffmpeg, ImageMagick) runs in a processing sandbox separate from the app's data volume.
+
+The blast radius of any single-app vulnerability is that app's container and nothing else. No lateral movement, no privilege escalation to the host, no persistence. This is a structural guarantee from the container isolation, not a policy that can be misconfigured.
+
+For cross-Safebox workloads (e.g., GPU inference on a remote Safebox), Safenet provides transparent remote service calls over mutual-TLS between attested Safeboxes, with costs settled automatically in Safebux.
 
 ---
 
@@ -335,7 +351,7 @@ If any of these fail, the AMI build aborts.
 
 ### "What if I'm just running a development instance?"
 
-You're not building an attested Safebox if SSH is acceptable. Build with the base installer in your development environment too — practicing the zero-shell workflow during development is how you find the operational gaps before they hit production. If you need SSH for development, fork the installer and remove the SSH-removal block; that fork is no longer Safebox.
+You're not building an attested Safebox if SSH is acceptable in production. Build with the base installer in your development environment too — practicing the zero-shell workflow during development is how you find the operational gaps before they hit production. The audit image includes SSH for inspection; sealed production images mask it at boot via overlay whiteouts. If you need SSH in production, that's a different security architecture.
 
 ### "What about emergency response when something goes wrong?"
 
@@ -348,6 +364,8 @@ SSM is more secure than a public SSH port with password authentication. That's a
 ### "What if a kernel CVE comes out and I need to patch fast?"
 
 Rebuild the AMI with the patched kernel, redeploy, roll the fleet. The patching cycle for an attested Safebox is measured in fleet-rotation time, not single-instance-patch time. This is by design — patching in place would change the rootfs hash, which would break attestation on the next boot anyway.
+
+Where possible, the base image includes firewall-level mitigations that protect against a CVE independently of the host kernel version. For example, CVE-2026-98432 (CVSS 9.8 IPv4 TCP handshake UAF) is mitigated by dropping inbound TCP SYNs with IPv4 header options at the nftables layer and disabling MPTCP via sysctl, in addition to gVisor's netstack preventing any container traffic from reaching the vulnerable kernel code path. See [SECURITY-HARDENING.md](../../docs/SECURITY-HARDENING.md) for the full CVE resilience analysis.
 
 If you need sub-hour patch turnaround, attestation isn't your security model — runtime intrusion detection plus mutable patching is. Different tools for different threat models.
 

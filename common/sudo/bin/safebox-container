@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo. The only path by which the
+# system component creates, destroys, or runs tools inside app containers.
+# Docker argv is fixed here; only the container name, the image ref, the
+# tool name and the tool's own arguments come from the caller.
+#
+# Who may call what (the caller is derived from SUDO_UID, see
+# safebox-caller.sh; the arguments never say who is asking):
+#
+#   create  <name> <image-ref>        operator instance (uid 990) only
+#           name       ^[a-z0-9-]{1,40}$
+#           image-ref  ^safebox-app-[a-z0-9-]+:[a-z0-9.-]+$
+#   destroy <name>                    operator instance only
+#   exec    <name> <tool> [args...]   the tenant instance safebox-sys-<name>
+#                                     only; any other caller, including the
+#                                     operator and every other tenant's
+#                                     instance, is refused before docker runs
+#           tool       one of npm pip cargo gem composer git migrate
+#           args       passed to the tool inside the container; see below
+#           migrate    is a pseudo-tool: it runs the tenant's own
+#                      /workspace/migrate.sh with exactly one action from
+#                      (run|status|rollback) and an optional target matching
+#                      ^[a-zA-Z0-9._-]{1,256}$. It exists so that schema
+#                      migrations happen inside the tenant's container at
+#                      the tenant's privilege, never on the host.
+#
+# The wrapper's own positional inputs (subcommand, name, image-ref, tool)
+# are rejected if they start with "-". Tool args are different: they are
+# the tool's command line ("install -r requirements.txt") and dashes are
+# legitimate there. Those args go into docker's argv AFTER the container
+# name and tool, past docker's own "--", so docker never parses them as
+# options; they are seen only by the tool, running as safebox-app inside
+# the container.
+#
+# On the in-container denylist: `docker exec --user safebox-app` runs at the
+# tenant's own privilege level inside the tenant's own container, which is
+# the same thing the tenant's app could do by itself. The security boundary
+# is the container (read-only, cap-drop ALL, no-new-privileges, no docker
+# socket), not this argument filter. The filter below is belt and braces to
+# stop the obvious ways of turning "run npm" into "run an arbitrary shell":
+#   git:  -c / -C / --exec-path / --config / --upload-pack / --receive-pack
+#         (each can point git at an attacker-chosen helper binary)
+#   npm:  exec / x / run-script as the first argument
+# See docs/HARDENING-PLAN.md fix 5.
+#
+# User namespaces. The daemon runs with userns-remap=default and this wrapper
+# never passes --userns=host: the uid shift is one of the few boundaries
+# between a container root escape and the host, and the tenant contract's
+# fixed in-container uid 991 (safebox-app) is honoured by mapping files to
+# it, not by switching the mapping off. Inside the container uid/gid 991 is
+# host uid/gid <base>+991, where <base> is the dockremap subordinate range in
+# /etc/subuid and /etc/subgid (dockremap:100000:65536 on every image, so
+# 100991). Before `docker run`, `create` therefore (as root):
+#   - chown -R <base>+991:<base>+991 the tenant workspace so the app can
+#     read and write what it is given;
+#   - checks that the per-container key already exists on tmpfs at
+#     /run/safebox/keys/<name>/system.hmac (directory 0750, file 0440,
+#     safebox-infra:<base>+991, written by the system component before it
+#     calls this wrapper and rewritten on every service start and on key
+#     rotation) and bind-mounts that directory read-only at
+#     /run/safebox/keys inside the container. The key is never placed in
+#     the tenant workspace;
+#   - chgrp <base>+991 and chmod 0660 the per-container socket so the mapped
+#     app user can connect to it through the bind mount.
+# The system component itself is a member of the host group safebox-app-ns
+# (gid <base>+991, created by install-base.sh), so the key and socket it
+# creates carry the mapped group without this wrapper. The chowns here
+# cover the initial workspace contents and act as a backstop.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly RE_NAME='^[a-z0-9-]{1,40}$'
+readonly RE_IMAGE='^safebox-app-[a-z0-9-]+:[a-z0-9.-]+$'
+readonly RE_TOOL='^(npm|pip|cargo|gem|composer|git|migrate)$'
+readonly RE_MIGRATE_ACTION='^(run|status|rollback)$'
+readonly RE_MIGRATE_TARGET='^[a-zA-Z0-9._-]{1,256}$'
+readonly TENANTS=/srv/safebox/tenants
+readonly SOCKETS=/run/safebox/containers
+readonly KEYS=/run/safebox/keys
+readonly APP_UID=991       # safebox-app inside the container (tenant contract)
+
+# Read the dockremap subordinate base from /etc/subuid or /etc/subgid and
+# return <base>+APP_UID: the host id that container uid/gid 991 maps to
+# under userns-remap=default. Fails closed if the line is missing or
+# malformed or the range does not cover 991.
+mapped_id() {
+    local file=$1 base count
+    IFS=: read -r _ base count < <(grep -m1 '^dockremap:' "$file" || true)
+    [[ ${base:-} =~ ^[0-9]+$ && ${count:-} =~ ^[0-9]+$ ]] \
+        || die "no dockremap range in $file; userns-remap is required"
+    (( count > APP_UID )) || die "dockremap range in $file does not cover uid $APP_UID"
+    printf '%d' $(( base + APP_UID ))
+}
+
+die() { printf 'safebox-container: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+usage() { die "usage: safebox-container create <name> <image-ref> | destroy <name> | exec <name> <tool> [args...]"; }
+
+[[ $# -ge 2 ]] || usage
+sub=$1; shift
+
+# Reject a leading "-" on the fixed positionals. For exec that is the name
+# and the tool (two arguments); tool args are checked separately.
+check_positionals() {
+    local a
+    for a in "$@"; do
+        [[ $a == -* ]] && die "argument may not start with '-'"
+    done
+    return 0
+}
+
+case $sub in
+    create)
+        require_operator
+        [[ $# -eq 2 ]] || usage
+        check_positionals "$@"
+        name=$1 image=$2
+        [[ $name =~ $RE_NAME ]] || die "invalid container name"
+        [[ $image =~ $RE_IMAGE ]] || die "invalid image-ref"
+        # The tenant workspace is its own dataset, safebox-pool/tenants/<name>
+        # (so /test can snapshot and clone it), created by safebox-instance
+        # start before the tenant's instance comes up.
+        [[ -d "$TENANTS/$name" ]] || die "tenant directory $TENANTS/$name does not exist (safebox-instance start creates it)"
+        # The tenant's own instance (safebox-system@<name>, started by
+        # safebox-instance) owns the socket; it must be up before docker
+        # bind-mounts it.
+        [[ -S "$SOCKETS/$name.sock" ]] || die "system socket $SOCKETS/$name.sock does not exist (is safebox-system@$name running?)"
+        # The tenant network. Docker's state lives on the pool and is empty on
+        # first boot, so nothing else creates it; fixed options, no caller
+        # input. ICC off: tenants talk to the host through their own socket,
+        # never to each other. Not "internal": they need egress for npm/pip.
+        if ! docker network inspect safebox-app >/dev/null 2>&1; then
+            docker network create --driver bridge \
+                --opt com.docker.network.bridge.enable_icc=false \
+                --opt com.docker.network.bridge.name=safebox-app \
+                safebox-app >/dev/null || die "could not create docker network safebox-app"
+        fi
+        # Map ownership to the user namespace (see header). The key must
+        # already exist on tmpfs: safebox-keyd writes it (after the operator
+        # sends it SIGHUP through safebox-keyd-reload), with the mapped
+        # group, and we only mount it. The directory also holds
+        # instance.hmac, 0400 for the instance uid, which the container's
+        # mapped uid cannot read.
+        muid=$(mapped_id /etc/subuid)
+        mgid=$(mapped_id /etc/subgid)
+        keydir="$KEYS/$name"
+        keyfile="$keydir/system.hmac"
+        [[ -d $keydir && ! -L $keydir ]] || die "key directory $keydir does not exist (has safebox-keyd been reloaded?)"
+        [[ -f $keyfile && ! -L $keyfile ]] || die "per-container key $keyfile does not exist"
+        chown -R --no-dereference "$muid:$mgid" -- "$TENANTS/$name"
+        chgrp --no-dereference "$mgid" -- "$SOCKETS/$name.sock"
+        chmod 0660 -- "$SOCKETS/$name.sock"
+        # No --userns=host: the daemon's userns-remap stays in force.
+        exec docker run --detach \
+            --name "safebox-app-$name" \
+            --restart unless-stopped \
+            --network safebox-app \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 1024 \
+            --tmpfs /tmp \
+            -v "$TENANTS/$name:/workspace" \
+            -v "$SOCKETS/$name.sock:/run/safebox/system.sock" \
+            -v "$keydir:/run/safebox/keys:ro" \
+            "$image"
+        ;;
+    destroy)
+        require_operator
+        [[ $# -eq 1 ]] || usage
+        check_positionals "$@"
+        name=$1
+        [[ $name =~ $RE_NAME ]] || die "invalid container name"
+        exec docker rm -f "safebox-app-$name"
+        ;;
+    exec)
+        [[ $# -ge 2 ]] || usage
+        check_positionals "$1" "$2"
+        name=$1 tool=$2; shift 2
+        [[ $name =~ $RE_NAME ]] || die "invalid container name"
+        [[ $tool =~ $RE_TOOL ]] || die "tool not allowed"
+        # Only the tenant's own instance may exec into its container.
+        tenant=$(caller_tenant)
+        [[ $name == "$tenant" ]] || die "caller is tenant '$tenant', not '$name'"
+        # Tool-specific denylist (see header). Checked on every arg for git
+        # because global options may appear anywhere before the subcommand.
+        case $tool in
+            git)
+                for a in "$@"; do
+                    [[ $a =~ ^-(c|C|-exec-path|-config|-upload-pack|-receive-pack) ]] \
+                        && die "git option not allowed: ${a%%=*}"
+                done
+                ;;
+            npm)
+                if [[ $# -ge 1 ]] && [[ $1 =~ ^(exec|x|run-script)$ ]]; then
+                    die "npm subcommand not allowed: $1"
+                fi
+                ;;
+            migrate)
+                # Pseudo-tool: the tenant's own migrate.sh, run inside its
+                # container. One action, one optional target, nothing else.
+                [[ $# -eq 1 || $# -eq 2 ]] || die "migrate takes <action> [target]"
+                [[ $1 =~ $RE_MIGRATE_ACTION ]] || die "migrate action must be run|status|rollback"
+                if [[ $# -eq 2 ]]; then
+                    [[ $2 =~ $RE_MIGRATE_TARGET ]] || die "invalid migrate target"
+                fi
+                exec docker exec --user safebox-app --workdir /workspace -- \
+                    "safebox-app-$name" /bin/bash /workspace/migrate.sh "$@"
+                ;;
+        esac
+        # Reject NUL-free but control-character-laden args; they cannot be
+        # useful to any of the allowed tools and complicate the sudo log.
+        for a in "$@"; do
+            [[ $a =~ [[:cntrl:]] ]] && die "control character in argument"
+        done
+        exec docker exec --user safebox-app --workdir /workspace -- \
+            "safebox-app-$name" "$tool" "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac

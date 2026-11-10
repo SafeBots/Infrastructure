@@ -1,0 +1,78 @@
+[Unit]
+Description=Safebox autovhost (on-demand nginx vhost + ACME provisioning)
+Documentation=https://github.com/safebots/safebox/blob/main/aws/scripts/components/autovhost/README.md
+After=network-online.target nginx.service var-lib-safebox.mount
+Wants=network-online.target
+Requires=nginx.service
+RequiresMountsFor=/var/lib/safebox
+
+[Service]
+Type=simple
+User=safebox-infra
+Group=safebox-infra
+# autovhost needs to:
+#   - read /etc/safebox/autovhost.json  (optional config override)
+#   - read /var/lib/safebox/autovhost/acme-account.key
+#   - write /run/safebox-autovhost/challenges/.well-known/acme-challenge/<token>
+#     and listen on /run/safebox-autovhost/autovhost.sock (RuntimeDirectory,
+#     0755 so nginx's www-data workers can reach both)
+#   - write /var/lib/safebox/nginx/vhosts/<host>.conf and /var/lib/safebox/nginx/certs/*
+#     (on the pool; /etc is a read-only overlay)
+#   - run `sudo -n /opt/safebox/bin/safebox-nginx-reload` (nginx -t, then
+#     nginx -s reload, as root; the only sudoers entry autovhost uses)
+#
+# /var/lib/safebox/nginx is created by ExecStartPre (root) at first boot and
+# owned by safebox-infra; nginx (its own user) needs traverse+read on it.
+ExecStartPre=+/bin/sh -c 'install -d -m 0755 -o safebox-infra -g safebox-infra /var/lib/safebox/nginx /var/lib/safebox/nginx/vhosts; install -d -m 0750 -o safebox-infra -g nginx /var/lib/safebox/nginx/certs 2>/dev/null || install -d -m 0750 -o safebox-infra -g www-data /var/lib/safebox/nginx/certs; install -d -m 0750 -o safebox-infra -g safebox-infra /var/lib/safebox/autovhost'
+
+# Socket and HTTP-01 token root; nginx (www-data) traverses it.
+RuntimeDirectory=safebox-autovhost
+RuntimeDirectoryMode=0755
+
+# Post-quantum TLS (docs/PQ-TLS.md): node is built on OpenSSL 3.5 and this
+# config makes every TLS handshake offer X25519MLKEM768 first.
+Environment=OPENSSL_CONF=/etc/ssl/openssl-pq.cnf
+ExecStart=/usr/bin/node /opt/safebox/autovhost/autovhost.js
+Restart=on-failure
+RestartSec=10s
+
+
+# Hardening. NoNewPrivileges is off because the nginx reload goes through
+# sudo and the root wrapper /opt/safebox/bin/safebox-nginx-reload; the
+# sudoers file allows exactly that path with no arguments. The bounding set
+# only bounds what sudo (setuid root) can obtain: SETUID/SETGID/CHOWN/
+# AUDIT_WRITE for the pty and its I/O log, KILL for the SIGHUP to nginx's
+# root master. The autovhost process itself holds no capability.
+NoNewPrivileges=false
+RestrictSUIDSGID=false
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_KILL CAP_AUDIT_WRITE
+AmbientCapabilities=
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+# Resource caps
+MemoryMax=256M
+TasksMax=64
+
+# Bind paths
+ProtectSystem=strict
+ReadOnlyPaths=/etc/safebox /opt/safebox/autovhost
+# /var/log/sudo-io and /run/sudo are written by sudo (log_output, timestamp
+# dir) from inside this unit's mount namespace; /var/log/nginx and
+# /var/lib/nginx by the root `nginx -t` the wrapper runs (error log, temp
+# paths). DAC still keeps safebox-infra itself out of the nginx ones. "-"
+# tolerates absence.
+ReadWritePaths=/var/lib/safebox/autovhost /var/lib/safebox/nginx -/var/log/sudo-io -/run/sudo -/var/log/nginx -/var/lib/nginx
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

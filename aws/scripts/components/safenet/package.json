@@ -1,0 +1,34 @@
+{
+  "name": "@safenet/protocol",
+  "version": "0.1.0",
+  "description": "Safenet Protocol - Distributed package registry, trust network, and payment settlement for Safeboxes",
+  "main": "lib/SafenetNode.js",
+  "bin": {
+    "safenet": "./cli.js"
+  },
+  "exports": {
+    ".": "./lib/SafenetNode.js",
+    "./verify": "./lib/Verify.js",
+    "./claims": "./lib/Claims.js",
+    "./identity": "./lib/Identity.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/testSafenet.js && node test/testVerify.js",
+    "test:verify": "node test/testVerify.js",
+    "lint": "echo 'No linter configured'"
+  },
+  "keywords": ["safenet", "safebox", "openclaiming", "ocp", "distributed", "registry", "package-manager"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "qbix-platform": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Safebots/Safenet"
+  }
+}

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by a tenant instance. The test
+# container must carry the calling tenant's label (caller from SUDO_UID,
+# see safebox-caller.sh); another tenant's test is refused. Force-removes a
+# test container. Exactly one input:
+#
+#   argv[1] test-id     ^[a-z0-9-]{1,40}$
+#
+# The container name is built here as safebox-test-<id>, so this wrapper can
+# only ever remove containers in the test namespace, never an app container,
+# the mariadb container, or anything else. See docs/HARDENING-PLAN.md fix 5.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+die() { printf 'safebox-test-stop: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+
+[[ $# -eq 1 ]] || die "usage: safebox-test-stop <test-id>"
+[[ $1 == -* ]] && die "argument may not start with '-'"
+test_id=$1
+[[ $test_id =~ ^[a-z0-9-]{1,40}$ ]] || die "invalid test-id"
+tenant=$(caller_tenant)
+test_owned_by "$test_id" "$tenant" || die "test '$test_id' does not belong to tenant '$tenant'"
+
+exec docker rm -f "safebox-test-$test_id"

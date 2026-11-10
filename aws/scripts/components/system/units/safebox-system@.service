@@ -1,0 +1,79 @@
+[Unit]
+Description=Safebox System Component, tenant instance for %i (serves /run/safebox/containers/%i.sock only)
+Documentation=file:///opt/safebox/manifests/system.json
+# One instance per managed container, started and stopped by the operator
+# instance through the root wrapper safebox-instance. It runs as the
+# tenant's own uid (safebox-sys-%i, created each boot by safebox-users),
+# reads exactly one key (/run/safebox/keys/%i/instance.hmac, written by
+# safebox-keyd) and listens on exactly one socket. A compromise of this
+# process through the tenant's own requests yields that tenant's socket,
+# that tenant's key and the tenant-side wrappers, which refuse any other
+# tenant's name because they derive the caller from SUDO_UID. It never sees
+# the HMAC seed, the master, the control socket or another tenant's state.
+# See docs/HARDENING-PLAN.md, "Per-tenant isolation".
+After=network-online.target safebox-nftables.service docker.service zfs-mount.service var-lib-safebox.mount safebox-users.service safebox-keyd.service
+Wants=network-online.target safebox-nftables.service
+Requires=safebox-users.service safebox-keyd.service
+RequiresMountsFor=/var/lib/safebox /srv/safebox/tenants /srv/zfs-clones /srv/safebox/models
+
+[Service]
+Type=simple
+User=safebox-sys-%i
+Group=safebox-sys
+# safebox-app-ns (gid 100991 = dockremap base + 991) is the host gid the
+# container's app user maps to under docker's userns-remap: the socket is
+# group-owned by it so the app inside the container can connect through the
+# bind mount. safebox-app (gid 991) lets this uid traverse /srv/safebox/tenants
+# (0750 safebox-infra:safebox-app). NEVER docker, never safebox-infra.
+SupplementaryGroups=safebox-app safebox-app-ns
+Environment=SAFEBOX_TENANT=%i
+# Post-quantum TLS (docs/PQ-TLS.md).
+Environment=OPENSSL_CONF=/etc/ssl/openssl-pq.cnf
+ExecStart=/usr/bin/node /opt/safebox/system/server.js
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+# Resource bounds: the embeddings worker subprocess (models of 100MB-2GB)
+# lives in this cgroup.
+MemoryMax=4G
+TasksMax=400
+LimitNOFILE=4096
+
+# Hardening — identical to the operator instance. The tenant-side wrappers
+# run as children of this process through sudo and inherit the filter.
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=mnt
+RestrictRealtime=true
+RestrictSUIDSGID=false
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @mount
+SystemCallFilter=~@obsolete @debug @cpu-emulation @module @raw-io @reboot @swap @clock
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_CHOWN CAP_FOWNER CAP_FSETID CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_KILL CAP_AUDIT_WRITE CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_RESOURCE
+AmbientCapabilities=
+
+ReadOnlyPaths=/opt/safebox/system
+# Exactly this tenant's workspace ("-": tolerated if the dataset is not
+# mounted yet, so a missing workspace cannot stop the instance from
+# starting), its state directory, the clone root
+# (clones are made by the root wrapper; this uid only names them) and the
+# socket directory (1771 root:safebox-sys with the sticky bit, so this uid can
+# create and remove its own socket and nobody else's). /run/safebox/keys is
+# reachable read-only through ProtectSystem=strict; the key file is 0400 for
+# this uid. Nothing under /var/lib/safebox outside tenants/%i is writable
+# and nothing owned by safebox-infra there is readable.
+ReadWritePaths=-/srv/safebox/tenants/%i /srv/zfs-clones /var/lib/safebox/tenants/%i /run/safebox/containers -/var/log/sudo-io -/run/sudo
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=safebox-system-%i
+
+# No [Install]: instances are started by safebox-instance, never enabled.

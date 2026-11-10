@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by the operator instance
+# (safebox-infra, uid 990). Takes NO arguments. Sends SIGHUP to safebox-keyd
+# so it re-reads /var/lib/safebox/managed-containers.json and writes, or
+# removes, the per-tenant key files on tmpfs. The operator calls it after
+# every /containers/create and /containers/destroy. It carries no data: the
+# key daemon reads the file the operator already wrote, and the operator
+# never sees a key. See docs/HARDENING-PLAN.md, "Per-tenant isolation".
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+die() { printf 'safebox-keyd-reload: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+
+[[ $# -eq 0 ]] || die "takes no arguments"
+require_operator
+systemctl is-active --quiet safebox-keyd.service || die "safebox-keyd.service is not running"
+exec systemctl kill -s HUP safebox-keyd.service

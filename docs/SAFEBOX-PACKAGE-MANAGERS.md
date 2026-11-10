@@ -513,7 +513,7 @@ $command = $argv[2];    // "git-clone-qbix"
 $commit = $argv[3];     // "a1b2c3d4..."
 
 // Load default command template
-$containers = json_decode(file_get_contents('/etc/safebox/managed-containers.json'), true);
+$containers = json_decode(file_get_contents('/var/lib/safebox/managed-containers.json'), true);
 $template = $containers[$container]['defaultCommands'][$command];
 
 // Fill in the commit hash

@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by safebox-infra. The only path by
+# which the system component touches ZFS. Every dataset name is validated
+# against the contract pattern, which pins operations to the tenants/ and
+# clones/ subtrees of safebox-pool; the pool root, the safebox, var, docker
+# and mariadb datasets are unreachable from here. Mountpoints are computed
+# by this script, never taken from the caller.
+#
+#   snapshot <dataset@snap>
+#   clone    <src-dataset@snap> <test-id>
+#            dest = safebox-pool/clones/<test-id>, mountpoint /srv/zfs-clones/<test-id>
+#   destroy  <dataset[@snap]> [recursive]
+#            "recursive" adds -r, which only ever descends within the named
+#            dataset (children and snapshots of it), so it stays in-subtree.
+#   rollback <dataset@snap> [recursive]
+#            "recursive" adds -r so a rollback to an older snapshot can
+#            destroy the newer snapshots of that same dataset.
+#
+#   dataset   ^safebox-pool/(tenants|clones)/[a-z0-9-]{1,40}(@[a-z0-9-]{1,40})?$
+#   test-id   ^[a-z0-9-]{1,40}$
+#
+# The caller is a tenant instance (safebox-system@<tenant>, uid
+# safebox-sys-<tenant>), identified from SUDO_UID through safebox-caller.sh.
+# Every dataset named in an argument must belong to that tenant: the tenant
+# dataset safebox-pool/tenants/<tenant> by name, a clone by the ZFS user
+# property safebox:tenant that this wrapper's own clone subcommand sets. A
+# clone of another tenant's test, or another tenant's dataset, is refused
+# before zfs runs, whatever opsTest.js believed. Test ids are still
+# <tenant>-<12 hex> for attribution in listings, but ownership is the
+# property, not the prefix.
+#
+# Flags are expressed as fixed keywords, never passed through: any argument
+# starting with "-" is rejected. See docs/HARDENING-PLAN.md fix 5.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly RE_DATASET='^safebox-pool/(tenants|clones)/[a-z0-9-]{1,40}(@[a-z0-9-]{1,40})?$'
+readonly RE_SNAPSHOT='^safebox-pool/(tenants|clones)/[a-z0-9-]{1,40}@[a-z0-9-]{1,40}$'
+readonly RE_TESTID='^[a-z0-9-]{1,40}$'
+readonly CLONE_PARENT=safebox-pool/clones
+readonly CLONE_MOUNT=/srv/zfs-clones
+
+die() { printf 'safebox-zfs: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+usage() { die "usage: safebox-zfs snapshot <ds@snap> | clone <ds@snap> <test-id> | destroy <ds[@snap]> [recursive] | rollback <ds@snap> [recursive]"; }
+
+# The caller is safebox-system.service, which runs under ProtectSystem=strict
+# and therefore in its own mount namespace. A clone mounted from inside that
+# namespace is invisible to dockerd (which bind-mounts /srv/zfs-clones/<id>
+# into the test container from the host namespace) and to everything else on
+# the box. Re-exec in PID 1's mount namespace so every mount and unmount
+# this wrapper causes lands where the rest of the system looks for it. The
+# unit grants CAP_SYS_ADMIN and CAP_SYS_CHROOT in its bounding set and
+# RestrictNamespaces=mnt for exactly this setns.
+if [[ -r /proc/1/ns/mnt && -r /proc/self/ns/mnt ]] \
+   && [[ "$(readlink /proc/1/ns/mnt)" != "$(readlink /proc/self/ns/mnt)" ]]; then
+    exec nsenter --mount=/proc/1/ns/mnt -- /opt/safebox/bin/safebox-zfs "$@"
+fi
+
+[[ $# -ge 2 ]] || usage
+for a in "$@"; do
+    [[ $a == -* ]] && die "argument may not start with '-'"
+done
+
+sub=$1; shift
+tenant=$(caller_tenant)
+owned() { dataset_owned_by "$1" "$tenant" || die "dataset ${1%%@*} does not belong to tenant '$tenant'"; }
+case $sub in
+    snapshot)
+        [[ $# -eq 1 ]] || usage
+        [[ $1 =~ $RE_SNAPSHOT ]] || die "invalid snapshot name"
+        owned "$1"
+        exec zfs snapshot -- "$1"
+        ;;
+    clone)
+        [[ $# -eq 2 ]] || usage
+        src=$1 test_id=$2
+        [[ $src =~ $RE_SNAPSHOT ]] || die "invalid source snapshot"
+        [[ $test_id =~ $RE_TESTID ]] || die "invalid test-id"
+        owned "$src"
+        dest="$CLONE_PARENT/$test_id"
+        mnt="$CLONE_MOUNT/$test_id"
+        # Belt and braces: the computed destination must itself satisfy the
+        # dataset pattern, so a future edit to CLONE_PARENT cannot widen it.
+        [[ $dest =~ $RE_DATASET ]] || die "computed destination out of subtree"
+        # Quota and no-setuid, no-device-nodes on the clone: it is written to
+        # by a tenant test container. safebox:tenant records the owner for
+        # every later call on this clone.
+        exec zfs clone -o "mountpoint=$mnt" -o quota=10G -o setuid=off -o devices=off \
+            -o "safebox:tenant=$tenant" -- "$src" "$dest"
+        ;;
+    destroy)
+        [[ $# -eq 1 || $# -eq 2 ]] || usage
+        ds=$1
+        [[ $ds =~ $RE_DATASET ]] || die "invalid dataset name"
+        owned "$ds"
+        if [[ $# -eq 2 ]]; then
+            [[ $2 == recursive ]] || die "second argument must be 'recursive'"
+            [[ $ds != *@* ]] || die "recursive destroy applies to datasets, not snapshots"
+            exec zfs destroy -r -- "$ds"
+        fi
+        exec zfs destroy -- "$ds"
+        ;;
+    rollback)
+        [[ $# -eq 1 || $# -eq 2 ]] || usage
+        snap=$1
+        [[ $snap =~ $RE_SNAPSHOT ]] || die "invalid snapshot name"
+        owned "$snap"
+        if [[ $# -eq 2 ]]; then
+            [[ $2 == recursive ]] || die "second argument must be 'recursive'"
+            exec zfs rollback -r -- "$snap"
+        fi
+        exec zfs rollback -- "$snap"
+        ;;
+    *)
+        usage
+        ;;
+esac

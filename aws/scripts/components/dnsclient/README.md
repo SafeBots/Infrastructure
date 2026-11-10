@@ -1,0 +1,1 @@
+The dnsclient component moved to [common/dnsclient/](../../../../common/dnsclient/); it is the same on all four clouds (public IP lookup branches on the `cloud` field of /var/lib/safebox/dnsclient.json), and the per-cloud attestation client it loads is installed by each cloud's install-system.sh as /opt/safebox/system/attestationClient.js.

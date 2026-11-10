@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by safebox-infra (the user
+# safebox-autovhost.service runs as). Takes NO arguments. Validates the
+# nginx configuration and, only if it passes, asks the running master to
+# reload. Both steps need root: /run/nginx.pid and the master process are
+# root's, and `nginx -t` opens root-owned log and temp paths.
+#
+# The configuration nginx reads is the image's /etc/nginx tree plus the
+# per-host vhosts autovhost writes under /var/lib/safebox/nginx/vhosts on
+# the pool; a malformed vhost fails here and the previous configuration
+# stays live. See docs/HARDENING-PLAN.md fix 5.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+die() { printf 'safebox-nginx-reload: %s\n' "$*" >&2; exit 2; }
+
+[[ $# -eq 0 ]] || die "takes no arguments"
+command -v nginx >/dev/null || die "nginx not installed"
+
+# -q: only errors on stderr. A failed test exits non-zero and nothing is
+# signalled.
+nginx -t -q || die "configuration test failed; reload not sent"
+[[ -s /run/nginx.pid ]] || die "/run/nginx.pid missing; is nginx running?"
+exec nginx -s reload

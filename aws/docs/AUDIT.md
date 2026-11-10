@@ -2,38 +2,36 @@
 
 > **Audience**: External security auditors reviewing a Safebox AMI before client selection. Also useful for internal pre-audit verification.
 >
-> **Goal**: Verify that the AMI, as built, behaves identically before and after SSH removal — so the post-removal AMI can be byte-identically attested while the pre-removal AMI is what auditors actually inspect.
+> **Goal**: Verify that the image, as built, matches the specification in `docs/HARDENING-PLAN.md`, and that the root hash the control plane blesses corresponds to exactly the bytes you inspected.
 
 ---
 
-## The Two-AMI Model
+## Two-AMI Build: Audit, Then Seal
 
-Safebox attestation depends on a specific workflow that this audit must validate:
+Safebox uses a two-AMI workflow with **chroot-based dual capture**. `build-image.sh` builds a single chroot, captures it as the **audit AMI** (with SSH and a `safebox-audit` user), then runs `safebox-seal-image.sh --chroot` on the same chroot directory to remove SSH, lock all accounts, scrub nondeterminism, and write `/etc/safebox/sealed`. The sealed chroot is captured as the **production AMI**. Both AMIs are built from the same chroot without ever booting, which eliminates boot-time nondeterminism and guarantees that AMI B is a deterministic function of AMI A. The sealed image gains three additional hardening measures at boot (`kernel.modules_disabled=1`, `hidepid=2`, locked root) that would have blocked audit work. See `docs/SEALING.md` for the full sealing workflow.
 
-1. **AMI-A (audit AMI)** — built by `build-ami.sh` with SSH and an audit user, otherwise identical to the production AMI. This is what you, the auditor, log into and inspect.
+What this means for the audit:
 
-2. **AMI-B (production AMI)** — built by the same `build-ami.sh` with the `--remove-ssh` flag. After SSH and SSM-agent removal, the cascade SHA256 changes (because the file set changes). Clients select AMI-B by its cascade hash; that's the immutable contract they pin.
+1. **You inspect a running instance.** The build team launches an instance from the audit AMI and provides you with SSH access via the `safebox-audit` user. You have full root access via `sudo`. Everything the production image will contain is on this instance — including SSH and the audit user, which are masked at boot time on sealed images by overlay whiteouts (see Phase 5).
 
-3. **The byte-identity claim**: every file in AMI-B that exists in AMI-A is byte-identical to its AMI-A counterpart. The only differences are file REMOVALS (sshd, ssh client, ssm-agent, getty units) and the resulting manifest hash changes. No file is silently modified between the two.
+2. **The root hash is the contract.** After sealing, `build-verity-root.sh` prints `ROOTHASH=<64 hex>`, which is also on the kernel command line, in the AMI's `RootHash` tag, and in `manifests/aws-<date>.json`. Any byte changed in the root filesystem changes the hash; the kernel refuses to read a block that does not match. A box whose TPM quote shows the PCR 8 and 9 values for that command line, kernel and initramfs is running exactly the bytes you inspected. Recompute the hash from the captured snapshot (`veritysetup verify`) and compare it to the manifest.
 
-Your job is to verify that claim holds and that AMI-A — which is what you can actually inspect via SSH — is a faithful proxy for AMI-B.
-
-If at the end of this audit you sign off on AMI-A, the build system rebuilds AMI-B from the same inputs, removes the audit-only files, and ships AMI-B to clients with a cascade hash they can independently verify against your sign-off.
+3. **Keys are not in the image.** The ZFS pool key and the HMAC seed are generated on the first boot of each production instance and sealed to that instance's TPM. The image contains no secret; sections below that look for key files on the image should find none.
 
 ---
 
 ## Pre-Audit Verification by the Build Team
 
-Before handing you AMI-A, the build team should have already verified:
+Before handing you the audit AMI, the build team should have already verified:
 
 ```
 ☐ git clean -fdx; git status reports clean working tree
 ☐ git log -1 shows the commit being audited; no uncommitted changes
-☐ scripts/build-ami.sh ran with no warnings or errors
-☐ scripts/verify-build.sh passed all gates
-☐ scripts/diff-amis.sh AMI-A AMI-B confirms only EXPECTED differences
-☐ The cascade SHA256 for AMI-B is computed and recorded
-☐ AMI-A is launched and reachable via SSH using audit credentials
+☐ aws/scripts/build-image.sh ran with no warnings or errors
+☐ common/image/verify-image.sh --audit passed every assertion (audit AMI)
+☐ common/image/verify-image.sh passed every assertion (production AMI)
+☐ The audit AMI boots successfully with SSH access via the safebox-audit user
+☐ tests/redteam/aws.sh <ami-id> passed
 ```
 
 If any of these are unchecked, the AMI is not ready for audit. Push back to the build team.
@@ -44,9 +42,9 @@ If any of these are unchecked, the AMI is not ready for audit. Push back to the 
 
 This is the highest-priority section. If anything here is wrong, nothing else matters.
 
-### 1.1 — Attested key generation (`scripts/generate-attested-key.sh`)
+### 1.1 — Key generation and sealing (`common/boot/safebox-unseal.sh`, `common/boot/safebox-seal.sh`)
 
-This script generates the ZFS encryption key sealed to TPM PCRs. It runs ONCE during the build process, before `install-base.sh`.
+These scripts run in the initramfs of each production instance. On first boot they generate the ZFS pool key and the HMAC seed, create the pool, and seal both keys to the local TPM; on every later boot they unseal them. Nothing about keys runs at build time, and nothing in the image is a key.
 
 **Read the script. Verify:**
 
@@ -60,23 +58,31 @@ This script generates the ZFS encryption key sealed to TPM PCRs. It runs ONCE du
 ☐ TPM2 sealing is done with tpm2_create + tpm2_load (or equivalent), NOT with the
   older tpm-tools that have known timing issues.
 
-☐ The PCR selection bound to the sealing policy includes at minimum:
+☐ The PCR selection bound to the sealing policy is exactly sha256:0,2,4,7,8,9,14,15:
     PCR 0  (UEFI firmware)
-    PCR 1  (UEFI configuration)
-    PCR 2-3 (option ROMs)
+    PCR 2  (option ROMs)
     PCR 4  (boot loader)
-    PCR 5  (boot loader configuration)
-    PCR 7  (Secure Boot state, if SB is enabled)
-    PCR 8-9 (bootloader stages)
-    PCR 14 (initramfs / kernel command line)
+    PCR 7  (Secure Boot state and the certificates used to verify shim, GRUB, kernel)
+    PCR 8  (GRUB: kernel command line, which carries the verity root hash)
+    PCR 9  (GRUB: kernel and initramfs)
+    PCR 14 (shim: MOK state)
+    PCR 15 (unused by firmware; at its reset value of all zeros at policy time)
 
-  If the selection includes fewer PCRs, the key will be released too easily (less
-  binding to the boot state). If it includes MORE PCRs (e.g. PCR 10 which is IMA),
-  the key may fail to release after legitimate runtime measurements, breaking the
-  AMI in production.
+  PCR 1 and 5 are left out on purpose: they vary with instance type and boot order
+  on the same image. PCR 10 (IMA) and later runtime PCRs would break the unseal
+  after legitimate measurements. Fewer than these eight would let a swapped root
+  disk unseal (0 and 7 alone do not change when the root changes).
 
-☐ The sealed blob is written to a deterministic location (/srv/safebox/runtimes/
-  tpm-sealed-zfs-key.blob or similar) with mode 0400 owned by root.
+☐ After a successful unseal or first-boot seal, the script runs
+  tpm2_pcrextend 15:sha256=<sha256("safebox-sealed-phase-complete")>, so the
+  policy no longer matches for the rest of the boot and nothing later, root
+  included, can unseal the blobs again.
+
+☐ The sealed blobs are written to /boot/safebox/ (zfs-key.pub, zfs-key.priv,
+  hmac-seed.pub, hmac-seed.priv, policy.digest, pcr-values.txt), mode 0400 root.
+  The unsealed pool key lives at /run/safebox/zfs-key only until `zfs load-key`
+  succeeds and is then deleted; the seed stays at /run/safebox/hmac-seed, mode
+  0400 owner safebox-infra, for the life of the boot.
 
 ☐ The raw key is wiped from memory after sealing — verify with `mlock` + `explicit_bzero`
   or equivalent. Just `unset` is not enough.
@@ -132,9 +138,9 @@ This script orchestrates the multi-component build. Bugs here can undermine ever
     5. AI/ML components (vision, embed, speech, tribe, llm-*)
     6. Infrastructure add-ons (cuda, vllm, index)
     7. Optional components (libreoffice, ocr, diffusion-small)
-    8. Final hardening pass (remove-ssh.sh if --remove-ssh flag)
-    9. Cascade SHA256 computation
-    10. TPM attestation seal
+    8. Cascade SHA256 computation
+    9. TPM attestation seal
+    10. (Post-build, post-audit) Image sealing via safebox-seal-image.sh
 
 ☐ Each step's exit code is checked. A non-zero exit from any component installer
   must abort the build immediately.
@@ -152,10 +158,10 @@ This script orchestrates the multi-component build. Bugs here can undermine ever
   In practice this means each installer writes to its own manifest path and
   doesn't touch siblings' manifests.
 
-☐ The `--remove-ssh` flag, when present, runs a specific script (e.g.
-  remove-ssh.sh) AFTER all other components. The pre-removal AMI (without the
-  flag) and post-removal AMI (with the flag) must produce file sets that differ
-  ONLY by the removed files — no other file changes between AMI-A and AMI-B.
+☐ The build produces an audit AMI with SSH intact. The seal script
+  (safebox-seal-image.sh) runs AFTER the build and audit are complete.
+  The audit AMI and sealed production AMI must differ ONLY by the addition
+  of /etc/safebox/sealed (one file — see Phase 5.1).
 ```
 
 **Then verify behavior:**
@@ -169,16 +175,9 @@ This script orchestrates the multi-component build. Bugs here can undermine ever
   install-system.sh) and verify the entire build aborts with a non-zero exit code.
   Verify no AMI is produced.
 
-☐ Run `build-ami.sh base,system --remove-ssh` and `build-ami.sh base,system`
-  (no flag). Diff the file sets. The ONLY differences should be:
-    - /usr/sbin/sshd removed
-    - /usr/bin/ssh, /usr/bin/scp, /usr/bin/ssh-* removed
-    - /usr/sbin/amazon-ssm-agent removed
-    - /etc/ssh/* removed
-    - getty@.service and serial-getty@*.service masked (symlinks to /dev/null)
-    - /opt/safebox/manifests/base.json updated (different sshdRemoved/ssmAgentRemoved values)
-    - Cascade SHA256 different
-  ANYTHING ELSE in the diff is a bug.
+☐ Build the audit AMI, then run safebox-seal-image.sh on it. Diff the
+  file sets. The ONLY difference should be the addition of /etc/safebox/sealed
+  (mode 0444). ANYTHING ELSE in the diff is a bug.
 ```
 
 ### 1.3 — Attestation verification (`scripts/verify-attestation.sh`)
@@ -292,35 +291,32 @@ npm ls --production --depth=0
 ☐ SHA256 of /opt/safebox/package-lock.json matches what's recorded in base.json under packages.npmLockSha256
 ```
 
-### 2.4 — Shell-access removal (AMI-A pre-check / AMI-B verification)
+### 2.4 — Shell access (audit AMI) and seal verification
 
-**On AMI-A (with audit SSH still present)**, the following packages are intentionally retained for audit access:
+**On the audit AMI**, the following are intentionally present for audit access:
 
 ```
 ☐ openssh-server is installed (for audit access)
 ☐ The audit user 'safebox-audit' exists with the build team's pubkey in authorized_keys
 ☐ sshd is running and listening on port 22
+☐ Root is accessible via sudo from safebox-audit
+☐ /etc/safebox/sealed does NOT exist (this is an unsealed audit AMI)
 ☐ NO other shell-access mechanism is enabled:
-    ☐ rpm -q amazon-ssm-agent returns "not installed"
-    ☐ rpm -q telnet-server returns "not installed"
-    ☐ rpm -q rsh-server returns "not installed"
-    ☐ rpm -q vsftpd returns "not installed"
-    ☐ rpm -q proftpd returns "not installed"
-    ☐ rpm -q cockpit returns "not installed"
+    ☐ dpkg -l amazon-ssm-agent shows not installed
+    ☐ dpkg -l telnetd shows not installed
+    ☐ dpkg -l rsh-server shows not installed
+    ☐ dpkg -l vsftpd shows not installed
+    ☐ dpkg -l cockpit shows not installed
 ```
 
-**These are the ONLY differences between AMI-A and AMI-B.** Verify by inspecting the build output diff:
-
-```bash
-diff <(rpm -qa | sort) <(cat /opt/safebox/expected-AMI-B-rpms.txt)
-```
+**After the audit passes**, the build team seals the image. The seal script (`/opt/safebox/seal/safebox-seal-image.sh`) is the ONLY step between the audit AMI and the production AMI. Verify the seal script is present and inspect its contents:
 
 ```
-☐ Diff shows EXACTLY these removals: openssh-server, openssh-clients, openssh
-☐ Diff shows NO additions or modifications
-☐ /etc/ssh/ exists on AMI-A but is absent in AMI-B's expected file list
-☐ /etc/systemd/system/multi-user.target.wants/sshd.service exists on AMI-A,
-  absent on AMI-B
+☐ /opt/safebox/seal/safebox-seal-image.sh exists, mode 0755
+☐ The script requires --chroot <rootfs> and refuses to operate on /
+☐ The script writes ONLY /etc/safebox/sealed (deterministic content, mode 0444). It does NOT remove SSH or modify accounts — those are masked at boot by safebox-sealed-boot.service
+☐ The script is idempotent (re-running on an already-sealed chroot is a no-op)
+☐ safebox-sealed-boot.service is installed and enabled
 ```
 
 ### 2.5 — Docker daemon configuration
@@ -447,7 +443,7 @@ ss -tnlp
 ```
 
 ```
-☐ Port 22 (SSH) is listening on 0.0.0.0 — AMI-A only (audit access)
+☐ Port 22 (SSH) is listening on 0.0.0.0 — audit AMI only (removed by seal script)
 ☐ Port 443 (nginx HTTPS) is listening on 0.0.0.0
 ☐ Port 80 (nginx HTTP → HTTPS redirect) is listening on 0.0.0.0
 ☐ Port 3306 (MariaDB) is listening on 127.0.0.1 only
@@ -460,12 +456,12 @@ Repeat for IPv6:
 ☐ `ss -6tnlp` shows the same loopback constraints — no [::] binds on private services
 ```
 
-For AMI-B verification (this can be done by the build team running the verify-build.sh script on the post-removal AMI):
+For production (sealed) AMI verification (done by the build team after booting a sealed instance):
 
 ```
-☐ Port 22 is NOT listening on AMI-B
-☐ amazon-ssm-agent process is not running on AMI-B
-☐ All other listeners are identical to AMI-A
+☐ Port 22 is NOT listening (SSH masked by safebox-sealed-boot.service via overlay whiteouts)
+☐ amazon-ssm-agent process is not running
+☐ All other listeners are identical to the audit AMI
 ```
 
 ### 2.9 — Manifest integrity
@@ -481,8 +477,8 @@ jq -r '.security' /opt/safebox/manifests/base.json
 ☐ base.json contains "component.version": "1.0.0-pre"
 ☐ base.json contains "security.telnetdRemoved": true
 ☐ base.json contains "security.shellAccessPolicy": "zero-interactive-access"
-  (Note: on AMI-A, the policy is "audit-mode" or similar; on AMI-B it's "zero-interactive-access".
-   The values WILL differ between A and B — that's expected and is part of the documented diff.)
+  (Note: on the audit AMI, the policy is "audit-mode" or similar; on the sealed production AMI it's "zero-interactive-access".
+   The values WILL differ — that's expected and is part of the documented seal diff.)
 ☐ base.json contains "security.zfsEncryption": "aes-256-gcm"
 ☐ base.json contains "packages.npmLockSha256" matching actual file hash
 ☐ SHA256 of base.json is recorded in the parent cascade manifest
@@ -502,9 +498,9 @@ The system component is ~1100 lines of focused Node.js plus ~20 lines of sudoers
 ls -la /opt/safebox/system/
 ls -la /etc/systemd/system/safebox-system.service
 ls -la /etc/sudoers.d/safebox-system
-ls -la /etc/safebox/managed-containers.json
-ls -la /etc/safebox/system.hmac
-ls -la /etc/safebox/containers/
+ls -la /var/lib/safebox/managed-containers.json
+ls -la /run/safebox/hmac-seed
+ls -la /run/safebox/keys/*/
 ls -la /run/safebox/
 ```
 
@@ -516,11 +512,11 @@ ls -la /run/safebox/
     nsmClient.js, cborDecode.js, package.json
 ☐ /etc/systemd/system/safebox-system.service exists, 0644, root:root
 ☐ /etc/sudoers.d/safebox-system exists, mode 0440, root:root, validates with `visudo -c`
-☐ /etc/safebox/managed-containers.json exists, mode 0644 (or 0640), root:root
-☐ /etc/safebox/system.hmac exists, mode 0640, root:safebox-infra-readers, length exactly 32 bytes
-☐ /etc/safebox/containers/ exists, mode 0750, owner safebox-infra:safebox-infra
-☐ /etc/safebox/containers/<name>.hmac files exist for every managed container,
-    mode 0640, owner safebox-infra, length exactly 32 bytes each
+☐ /var/lib/safebox/managed-containers.json exists, mode 0644 (or 0640), root:root
+☐ /run/safebox/hmac-seed exists on tmpfs, mode 0400, owner root (read by the service only through LoadCredential=), length exactly 32 bytes; nothing under /etc or /var holds a key
+☐ /run/safebox/keys/<name>/ exists per managed container, owner safebox-infra, mode 0750
+☐ /run/safebox/keys/<name>/system.hmac files exist for every managed container,
+    mode 0440, owner safebox-infra, length exactly 32 bytes each
 ☐ User safebox-infra exists (system user, no home, no shell)
 ☐ Group safebox-infra-readers exists; safebox-infra is a member
 ☐ /srv/zfs-clones exists, mode 0750, owner safebox-infra
@@ -578,7 +574,7 @@ cat /opt/safebox/system/config.js
 ```
 
 ```
-☐ CONFIG_PATH defaults to /etc/safebox/managed-containers.json
+☐ CONFIG_PATH defaults to /var/lib/safebox/managed-containers.json
 ☐ env-var override (SAFEBOX_SYSTEM_CONFIG) is gated behind a clearly-test-only path
 ☐ loadFile() returns null on parse failure rather than throwing — reload-safe
 ☐ reload() refuses to replace good config with broken config (silent denial)
@@ -725,7 +721,7 @@ cat /opt/safebox/system/opsModels.js
 
 ```bash
 # As root, with the system component running:
-SECRET_HEX=$(xxd -p /etc/safebox/system.hmac | tr -d "\n")
+SECRET_HEX=$(xxd -p /run/safebox/keys/<name>/system.hmac | tr -d "\n")  # the per-container key; the master is never on disk
 # Run the smoke harness from the repo:
 node aws/scripts/components/system/test/smoke.js
 ```
@@ -818,7 +814,7 @@ find /srv /opt/safebox /etc/safebox -type f \( -perm /o+r -o -perm /o+w \) -ls 2
 ```
 ☐ No file matches the above (all secrets are non-world-readable)
 ☐ /run/safebox/zfs-key is mode 0400, owner root
-☐ /etc/safebox/system.hmac is mode 0640, group safebox-infra-readers
+☐ /run/safebox/hmac-seed is mode 0400, owner root; no file named system.hmac exists outside /run/safebox/keys/*/
 ☐ /etc/safebox/aws-nitro-root.pem is mode 0644 (public; pinned by fingerprint)
 ☐ /etc/shadow is mode 0600 (or 0640, group=shadow)
 ☐ /etc/sudoers and /etc/sudoers.d/ are mode 0440
@@ -897,85 +893,57 @@ If host-level egress is wide open, that's not necessarily a bug, but the auditor
 
 ---
 
-## Phase 5 — Diff Verification (Critical for the Two-AMI Model)
+## Phase 5 — Image Identity Verification
 
-This phase is THE most important from the byte-identity standpoint. The build team's `scripts/diff-amis.sh` (if it exists, otherwise reproduce manually) should produce a verifiable diff between AMI-A and AMI-B.
+The production AMI is the audit AMI after the seal script runs. This phase confirms that the seal script introduces ONLY the documented changes, and that the production image's root hash ties back to the bytes you inspected.
 
-### 5.1 — Allowed differences
+### 5.1 — Seal script diff
 
-Only these differences are expected between AMI-A and AMI-B:
-
-```
-☐ Removed: /usr/sbin/sshd
-☐ Removed: /usr/bin/ssh, /usr/bin/scp, /usr/bin/sftp, /usr/bin/ssh-keygen, /usr/bin/ssh-add, /usr/bin/ssh-agent
-☐ Removed: /etc/ssh/ (entire directory)
-☐ Removed: /etc/pam.d/sshd
-☐ Removed: /etc/systemd/system/multi-user.target.wants/sshd.service
-☐ Removed: /var/lib/sss/pubconf/known_hosts (if SSSD integration is used)
-☐ Removed: amazon-ssm-agent files (if installed on AMI-A — typically not, since
-  ssm-agent is removed in install-base.sh, not the remove-ssh step)
-☐ Modified: /opt/safebox/manifests/base.json — fields sshdRemoved, ssmAgentRemoved,
-  ttyLoginsDisabled, shellAccessPolicy will differ
-☐ Modified: /opt/safebox/manifests/cascade.json — cascade hash differs
-☐ Removed: the audit user account 'safebox-audit' from /etc/passwd, /etc/shadow, /etc/group
-☐ Removed: /home/safebox-audit/ (entire home directory)
-☐ Added: getty@.service, serial-getty@*.service masked (symlinks to /dev/null in
-  /etc/systemd/system/) — these may already be masked on AMI-A; verify
-```
-
-### 5.2 — Forbidden differences
-
-The following must be IDENTICAL between AMI-A and AMI-B. If any differ, the byte-identity claim is broken and the audit must restart:
+The seal script (`safebox-seal-image.sh`) is the only step between the audit AMI you inspected and the production AMI clients deploy. The script writes exactly ONE file:
 
 ```
-☐ All package versions in rpm -qa output (except openssh-* removed on AMI-B)
-☐ All file contents in /opt/safebox/ (except manifest files which are explicitly noted above)
-☐ All file contents in /srv/safebox/ (except auth.token which is regenerated per build — flag below)
-☐ All systemd unit files in /etc/systemd/system/ (except sshd.service and ssh.service)
-☐ All sysctl values
-☐ All auditd rules
-☐ All php.ini settings
-☐ All Docker daemon settings
-☐ ZFS dataset layout and properties
-☐ User accounts (except safebox-audit which is removed on AMI-B)
-☐ All kernel command-line parameters (`/proc/cmdline`)
-☐ Kernel version and modules
-☐ Initramfs contents
+☐ Added: /etc/safebox/sealed (mode 0444) — the flag that triggers production-only hardening at boot
 ```
 
-### 5.3 — The auth token regeneration concern
+No other files should differ. To verify, compare the audit chroot directory tree before and after running `safebox-seal-image.sh --chroot` — the diff must contain ONLY the single added file above. The seal script does NOT remove SSH, modify accounts, or scrub any files; those operations happen at boot time via `safebox-sealed-boot.service` (see 5.2 below).
 
-The auth token at `/srv/safebox/runtimes/system/auth.token` is generated from `/dev/urandom` at build time. This means **AMI-A and AMI-B will have different auth tokens**, and that token contents will be part of the cascade hash.
+### 5.2 — Production boot hardening
 
-This is a problem for byte-identity. The build team must handle it one of two ways:
-
-```
-☐ EITHER: The auth token is generated at FIRST BOOT, not build time. The AMI ships
-  with a placeholder or empty token file; the first boot generates and seals the
-  real token to TPM. Both AMI-A and AMI-B then have the same placeholder content,
-  preserving byte-identity. (Recommended approach.)
-☐ OR: The auth token is generated from a deterministic source bound to the
-  cascade hash, so AMI-A and AMI-B both compute the same token. (Not recommended
-  because it leaks the token through the cascade hash itself.)
-☐ OR: The auth token is excluded from the cascade hash entirely. (Acceptable if
-  there's a separate runtime attestation of the token's provenance.)
-```
-
-The auditor must determine which approach the build team uses and verify it works. If the build team has a fourth approach not listed here, document it and verify the byte-identity claim holds under it.
-
-### 5.4 — Cascade hash verification
+On a sealed production AMI, `safebox-sealed-boot.service` applies hardening at boot. SSH binaries and config remain on the dm-verity root but are masked via overlay whiteouts — the kernel returns ENOENT for those paths even though the files exist on the read-only lower layer. Verify on a test instance booted from the sealed image:
 
 ```
-☐ Build AMI-A. Record its cascade hash.
-☐ Build AMI-B from the same input + --remove-ssh flag. Record its cascade hash.
-☐ The two hashes MUST differ (they cover different file sets).
-☐ Rebuild AMI-B from the same source tree, hours later, on a different builder.
-  The new AMI-B's cascade hash MUST be byte-identical to the first AMI-B.
-  (If not, the build has nondeterministic inputs somewhere — bug for build team.)
-☐ Same test for AMI-A: rebuild later, hash must match.
-☐ Reproducibility: a third party (not the build team) checks out the same git
-  commit, runs build-ami.sh with the same flags, and produces a cascade hash
-  byte-identical to what the build team published. This is the gold standard.
+☐ /etc/safebox/sealed exists (mode 0444)
+☐ systemctl status safebox-sealed-boot.service shows active (exited), success
+☐ SSH units are masked: systemctl is-enabled ssh.service shows "masked"
+☐ No SSH binaries visible: ! test -x /usr/sbin/sshd (overlay whiteout hides it)
+☐ No /etc/ssh directory visible: ! test -d /etc/ssh (overlay whiteout)
+☐ No SSH listener: ss -tnlp shows nothing on port 22
+☐ No safebox-audit home visible: ! test -d /home/safebox-audit (overlay whiteout)
+☐ sysctl kernel.modules_disabled returns 1
+☐ findmnt /proc shows hidepid=2
+```
+
+### 5.3 — Cascade hash verification
+
+```
+☐ Build the audit AMI. Record its verity root hash.
+☐ The production AMI must have a different root hash (the seal script modifies the file set).
+☐ The only differences between the two are those enumerated in 5.1 above.
+☐ Auditor hash reproduction:
+    1. Extract the audit AMI's root filesystem (mount the EBS snapshot read-only)
+    2. Run: safebox-seal-image.sh --chroot /mnt/audit-root
+    3. Run: SOURCE_DATE_EPOCH=0 build-verity-root.sh /mnt/audit-root /dev/target-disk <grub-hash>
+    4. The ROOTHASH output must match the production AMI's root hash from the build manifest
+☐ Rebuild from the same source tree, hours later, on a different builder. Both the audit and production root hashes must be byte-identical to the first build. (If not, the build has nondeterministic inputs somewhere — bug for build team.)
+☐ Reproducibility: a third party (not the build team) checks out the same git commit, runs build-image.sh, and produces root hashes byte-identical to what the build team published. This is the gold standard.
+```
+
+### 5.4 — Root hash verification
+
+```
+☐ veritysetup verify on the production AMI's SAFEBOX-ROOT and SAFEBOX-HASH partitions succeeds with the root hash from manifests/aws-<date>.json
+☐ The root hash on the kernel command line in /boot/grub/grub.cfg equals that hash
+☐ The inventory digest in the manifest equals sha256 of the inventory recomputed from the rootfs
 ```
 
 ---
@@ -992,8 +960,8 @@ Things the auditor must verify outside the running instance:
 ☐ Read scripts/build-ami.sh end to end
 ☐ Read scripts/generate-attested-key.sh end to end
 ☐ Read scripts/verify-attestation.sh end to end
-☐ Read scripts/remove-ssh.sh end to end (the script that produces AMI-B from AMI-A's intermediate state)
-☐ Read scripts/diff-amis.sh (or reproduce it manually)
+☐ Read common/seal/safebox-seal-image.sh end to end (writes the sealed flag — the only change between audit and production)
+☐ Read common/seal/safebox-sealed-boot.service (boot-time hardening: masks SSH via overlay whiteouts, sets modules_disabled and hidepid)
 ☐ Read the daemon source code for the system component (likely Python, Node, or Go)
 ☐ Verify all secrets in code are NOT hardcoded (no API keys, no default passwords)
 ☐ Verify all SHA256 manifests in the repo match the actual built artifacts
@@ -1024,8 +992,8 @@ Things the auditor must verify outside the running instance:
 
 After completing all phases, the auditor should produce a sign-off document containing:
 
-1. **Cascade hash** of AMI-B (the production AMI) — this is what clients will pin to
-2. **Confirmation** that AMI-A is a faithful proxy for AMI-B except for the documented differences
+1. **Cascade hash** of the production (sealed) AMI — this is what clients will pin to
+2. **Confirmation** that the seal script introduces ONLY the documented differences between the audit AMI and the production AMI
 3. **List of findings** by severity:
     - CRITICAL: blocks sign-off
     - HIGH: must be fixed before sign-off
@@ -1048,7 +1016,7 @@ A new audit (covering at minimum Phases 1–5) is required when:
 - An existing component installer is modified
 - A package version is bumped
 - The kernel version is bumped
-- Any of the trust-root scripts (generate-attested-key, build-ami, verify-attestation, remove-ssh) are modified
+- Any of the trust-root scripts (generate-attested-key, build-image, verify-attestation, safebox-seal-image) are modified
 - The M-of-N signer set is modified
 - A CVE is discovered affecting any installed package (a new build incorporates the fix)
 
@@ -1058,9 +1026,11 @@ The audit need NOT cover everything from scratch each time, but the diff from th
 
 ## Glossary
 
-- **AMI-A**: The audit AMI — has SSH and an audit user. What the auditor logs into.
-- **AMI-B**: The production AMI — built from same source with `--remove-ssh` flag. What clients deploy.
+- **Audit AMI**: The pre-seal image — has SSH and a `safebox-audit` user. What the auditor logs into and inspects.
+- **Production AMI**: The sealed image — identical to the audit AMI plus the sealed flag. SSH masked at boot via overlay whiteouts, `kernel.modules_disabled=1` and `hidepid=2` applied at boot. What clients deploy.
+- **Seal script**: `safebox-seal-image.sh --chroot <rootfs>` — writes the `/etc/safebox/sealed` flag file. The only on-disk change between Image A and Image B.
+- **Sealed flag**: `/etc/safebox/sealed` — written by the seal script; triggers production hardening at boot via `safebox-sealed-boot.service`.
+- **Overlay whiteout**: A special directory entry in the tmpfs upper layer of an overlayfs mount. The kernel returns ENOENT for the whited-out path even though the file exists on the read-only dm-verity lower layer.
 - **Cascade hash**: SHA256 over the concatenation of all component manifest hashes. The single hash that represents the AMI's entire content.
-- **Byte-identity claim**: That AMI-B's files (excluding documented removals) are byte-for-byte identical to AMI-A's. Verified by `diff-amis.sh`.
 - **M-of-N**: A threshold signature scheme. M signatures from a set of N signers are required to authorize an operation.
 - **Cascade**: The chain of measurements from boot loader → kernel → initramfs → rootfs → installed components → final attestation.

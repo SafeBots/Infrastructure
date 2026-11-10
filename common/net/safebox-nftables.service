@@ -1,0 +1,41 @@
+# safebox-nftables.service - metadata-service firewall (HARDENING-PLAN.md fix 6).
+#
+# Ordered BEFORE docker.service: the container rule lives in the DOCKER-USER
+# chain, which the script creates itself when Docker has not yet, and which
+# Docker never flushes (it only adds its own FORWARD jump to it and a
+# trailing RETURN). Loading the rule before the daemon starts means a
+# container with restart=unless-stopped that comes back with the daemon can
+# never see the metadata address, not even for the first second. A rule
+# placed in FORWARD directly would be shadowed by the ACCEPT jumps Docker
+# inserts on every start, which is why DOCKER-USER is used.
+#
+# The host-side rules (inbound policy drop; metadata reachable by root and
+# safebox-infra only) are in the same script, so they apply even if Docker
+# never starts. The ordering is enforced from both sides: Before=docker
+# here, and docker.service.d/10-safebox-nftables.conf adds
+# Requires=/After= so Docker cannot start if this unit fails.
+
+[Unit]
+Description=Safebox metadata-service firewall rules
+After=network.target
+Before=docker.service safebox-system.service safebox-dnsclient.service safebox-autovhost.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/safebox/safebox-imds.sh
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_NETLINK AF_INET AF_INET6
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

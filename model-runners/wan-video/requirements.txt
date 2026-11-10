@@ -1,0 +1,13 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+# torch and diffusers added when the inference loop is wired:
+# torch==2.5.0
+# diffusers @ git+https://github.com/huggingface/diffusers@<pinned-sha>
+# transformers>=4.45.0
+# accelerate>=0.33.0
+# safetensors
+# sentencepiece
+# Pillow
+# opencv-python-headless
+# controlnet_aux  (for VACE preprocessing: depth, pose, canny)

@@ -1,0 +1,65 @@
+#!/usr/sbin/nft -f
+# safebox-inner-egress.nft — egress deny-all for the INNER Safebox
+#
+# This ruleset is loaded ONLY on inner Safeboxes (boxes deployed with
+# a paired outer Safebox Console). It replaces the default policy-accept
+# OUTPUT chain from safebox-imds.nft with a deny-all policy that permits
+# traffic only to:
+#
+#   1. The outer Safebox Console's private IP (set at deploy time via
+#      /etc/safebox/console-ip, written by safebox-firstboot from metadata).
+#   2. Loopback (containers talking to the system component via Unix sockets
+#      still work; this covers any localhost traffic).
+#   3. The cloud metadata service (169.254.169.254) for the same restricted
+#      set of users as in safebox-imds.nft (root, safebox-infra, safebox-dns).
+#
+# Everything else is dropped. This closes the egress gap: web app containers,
+# model runners, and any other process on the inner Safebox cannot reach the
+# internet directly. All outbound traffic must go through the outer Console's
+# governed egress proxy.
+#
+# The outer Console's IP is read from /etc/safebox/console-ip at load time
+# by safebox-inner-egress.sh, which generates a define and prepends it to
+# this file before loading. The placeholder $CONSOLE_IP below is replaced
+# by that script; this file is not loaded directly by nft.
+#
+# This file is additive: it is loaded AFTER safebox-imds.nft, and it
+# replaces the output chain in the safebox table with a deny-all policy.
+# The input chain from safebox-imds.nft is preserved.
+
+# Flush only the output chain; the input chain from safebox-imds.nft stays.
+flush chain inet safebox output
+
+table inet safebox {
+    chain output {
+        type filter hook output priority filter; policy drop;
+
+        # Loopback: always allow (system component sockets, local services)
+        oif "lo" accept
+
+        # Established/related: allow replies to connections we initiated
+        ct state established,related accept
+
+        # Outer Safebox Console: the ONE allowed external destination.
+        # $CONSOLE_IP is replaced by safebox-inner-egress.sh at load time.
+        ip daddr $CONSOLE_IP accept
+
+        # Cloud metadata service: same restricted access as safebox-imds.nft.
+        # Only root (firstboot), safebox-infra (system component) and
+        # safebox-dns (dnsclient) may reach it.
+        ip daddr 169.254.169.254 meta skuid 0 accept
+        ip daddr 169.254.169.254 meta skuid 990 accept
+        ip daddr 169.254.169.254 meta skuid 992 accept
+        ip daddr 169.254.169.254 udp dport 123 meta skuid "_chrony" accept
+        ip daddr 169.254.169.254 counter drop
+
+        # AWS IPv6 IMDS
+        ip6 daddr fd00:ec2::254 meta skuid 0 accept
+        ip6 daddr fd00:ec2::254 meta skuid 990 accept
+        ip6 daddr fd00:ec2::254 meta skuid 992 accept
+        ip6 daddr fd00:ec2::254 counter drop
+
+        # Everything else: drop and count
+        counter drop
+    }
+}

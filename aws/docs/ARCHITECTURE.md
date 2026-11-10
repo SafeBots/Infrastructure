@@ -1032,7 +1032,7 @@ The control socket is not bind-mounted into any container. It's reachable only f
 | `/run/safebox/control.sock` | Host (safebox-infra) only | Master | `dnf` via `/system`; all of `/models/*`; all of `/containers/*` |
 | `/run/safebox/containers/<name>.sock` | Bind-mounted into one container | Per-container, HKDF-derived | `npm/pip/composer/cargo/gem/git/migrate/zfs-*` via `/system`; all of `/test/*` |
 
-Per-container HMAC keys are derived deterministically from the master via HKDF with `info = "safebox-container-<name>-v1"`, so foo's key and bar's key are cryptographically independent. The container's key file is bind-mounted read-only into the container at `/etc/safebox/system.hmac`.
+Per-container HMAC keys are derived deterministically from the master via HKDF with `info = "safebox-container-<name>-v1"`, so foo's key and bar's key are cryptographically independent. The container's key file lives on the host tmpfs at `/run/safebox/keys/<name>/system.hmac` (never in the workspace dataset) and is bind-mounted read-only into the container, where it is visible at `/run/safebox/keys/system.hmac`.
 
 For the full transport protocol, signing format, error codes, and integration examples, see [`Safebox.md`](Safebox.md).
 

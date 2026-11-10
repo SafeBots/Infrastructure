@@ -1,0 +1,73 @@
+[Unit]
+Description=Safebox DNS Client (TPM-attested announce to the Safenet log and DNS relays)
+Documentation=file:///opt/safebox/dnsclient/dnsclient.js
+# Configuration (dnsclient.json), the identity key, the last announce
+# and the announced marker all live on the pool at /var/lib/safebox/dns,
+# owned by safebox-dns (uid 992), a uid of its own: the process that talks
+# to the public internet does not run as the uid that holds the HMAC
+# master (safebox-infra) and shares no files with it.
+# safebox-firstboot writes dnsclient.json; this unit announces.
+After=network-online.target safebox-firstboot.service var-lib-safebox.mount
+Wants=network-online.target
+RequiresMountsFor=/var/lib/safebox
+
+[Service]
+Type=simple
+User=safebox-dns
+Group=safebox-dns
+# Post-quantum TLS (docs/PQ-TLS.md): node is built on OpenSSL 3.5 and this
+# config makes every TLS handshake offer X25519MLKEM768 first.
+Environment=OPENSSL_CONF=/etc/ssl/openssl-pq.cnf
+ExecStart=/usr/bin/node /opt/safebox/dnsclient/dnsclient.js
+Restart=on-failure
+RestartSec=10s
+
+# Hardening. NoNewPrivileges is off because the TPM quote and the
+# memory-encryption report come from root wrappers through sudo
+# (/opt/safebox/bin/safebox-tpm-quote, /opt/safebox/bin/safebox-confidential-report);
+# the sudoers file allows safebox-dns exactly those two paths and nothing else.
+NoNewPrivileges=false
+RestrictSUIDSGID=false
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# The process runs as safebox-dns with no capability; the bounding set
+# only bounds what sudo (setuid root) can give safebox-tpm-quote: sudo needs
+# SETUID/SETGID/CHOWN/AUDIT_WRITE for the pty and its I/O log, the wrapper
+# itself needs none (/dev/tpmrm0 is root-owned). An empty set would leave
+# sudo unable to set up the pty that use_pty demands.
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_KILL CAP_AUDIT_WRITE
+AmbientCapabilities=
+
+# Resource caps. The dnsclient process is tiny — a few MB of RSS in
+# steady state.
+MemoryMax=128M
+TasksMax=32
+
+# Writes: identity.key, last-announce.json, announced, dnsclient/state.json,
+# and on OCI the platform certificate.
+# /run/safebox: the quote wrapper keeps its per-call scratch directory under
+# /run/safebox/quote; /var/log/sudo-io and /run/sudo are written by sudo
+# (log_output, timestamp dir) inside this unit's mount namespace.
+ReadOnlyPaths=/opt/safebox/dnsclient /etc/safebox
+ReadWritePaths=/var/lib/safebox/dns /run/safebox -/var/log/sudo-io -/run/sudo
+
+# Networking: egress to the Safenet peers and DNS relays named in the
+# image's defaults.json plus the metadata address, and the inbound
+# challenge listener on 8443. No IPAddressAllow restriction: the relays'
+# addresses are not fixed.
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=safebox-dnsclient
+
+[Install]
+WantedBy=multi-user.target

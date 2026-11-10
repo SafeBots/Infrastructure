@@ -51,7 +51,7 @@ HOST:
 
   /etc/safebox/
     managed-containers.json               ← per-container ACLs
-    system.hmac                           ← master key (mode 0640)
+    (no keys; static certs only. The master is derived in memory from /run/safebox/hmac-seed)
     containers/
       safebox-app-foo.hmac                ← per-container key, mode 0640
       safebox-app-bar.hmac                ← per-container key, mode 0640
@@ -59,19 +59,19 @@ HOST:
 
 INSIDE EACH CONTAINER (via bind mounts):
   /run/safebox/system.sock                ← from host's /run/safebox/containers/<name>.sock
-  /etc/safebox/system.hmac                ← from host's /etc/safebox/containers/<name>.hmac
-                                            (read-only)
+  /run/safebox/keys/system.hmac           ← host's /run/safebox/keys/<name>/system.hmac (tmpfs), bind-mounted
+                                            read-only; never inside the tenant-writable workspace
 ```
 
 When Safebox creates a new container via `/containers/create`, the System component:
 
 1. Adds the container to `managed-containers.json`
 2. Derives a fresh per-container HMAC key from the master via HKDF
-3. Writes it to `/etc/safebox/containers/<name>.hmac` (mode 0640, owner `safebox-infra`)
+3. Writes it to `/run/safebox/keys/<name>/system.hmac` on tmpfs (directory 0750, file 0440, owner `safebox-infra`, group = the host gid the container's app user maps to). The key is never written under the tenant's workspace, which the tenant controls.
 4. Opens a new HTTP listener on `/run/safebox/containers/<name>.sock`
 5. Returns the socket path, key path, and bind-mount hints in the response
 
-The orchestrator (whichever component starts `docker run`) bind-mounts both into the container at the standard paths. The Safebox Node process inside the container reads its key from `/etc/safebox/system.hmac` and connects to `/run/safebox/system.sock` — the same conventional paths every container uses.
+The orchestrator (whichever component starts `docker run`) bind-mounts both into the container at the standard paths. The Safebox Node process inside the container reads its key from `/run/safebox/keys/system.hmac` and connects to `/run/safebox/system.sock` — the same conventional paths every container uses.
 
 ## Authentication
 
@@ -141,7 +141,7 @@ Inside any managed container, Safebox Node uses the standard paths:
 
 ```js
 const SOCKET   = '/run/safebox/system.sock';   // bind-mounted from host
-const KEY_PATH = '/etc/safebox/system.hmac';   // bind-mounted from host
+const KEY_PATH = '/run/safebox/keys/system.hmac';   // read-only bind mount from the host's tmpfs
 ```
 
 Then HTTP-over-Unix-socket:
@@ -332,17 +332,15 @@ const r = await callOnControl('POST', '/containers/create', {
 // {
 //   containerName: 'safebox-app-newapp',
 //   socketPath:    '/run/safebox/containers/safebox-app-newapp.sock',
-//   keyPath:       '/etc/safebox/containers/safebox-app-newapp.hmac',
-//   bindMounts: {
-//     socket: '/run/safebox/containers/safebox-app-newapp.sock:/run/safebox/system.sock',
-//     key:    '/etc/safebox/containers/safebox-app-newapp.hmac:/etc/safebox/system.hmac:ro',
-//   }
+//   keyPath:       '/run/safebox/keys/safebox-app-newapp/system.hmac',
+//   keyPathInContainer: '/run/safebox/keys/system.hmac',
 // }
 
-// Then `docker run` with both bind mounts:
+// safebox-container create then runs `docker run` with the bind mounts:
 //   docker run -d --name safebox-app-newapp \
+//     -v /srv/safebox/tenants/safebox-app-newapp:/workspace \
 //     -v /run/safebox/containers/safebox-app-newapp.sock:/run/safebox/system.sock \
-//     -v /etc/safebox/containers/safebox-app-newapp.hmac:/etc/safebox/system.hmac:ro \
+//     -v /run/safebox/keys/safebox-app-newapp:/run/safebox/keys:ro \
 //     qbix/app:1.0.0
 ```
 
@@ -358,7 +356,7 @@ The System component:
 1. Removes the entry from `managed-containers.json`
 2. Closes the listener for that socket
 3. Removes the socket file from `/run/safebox/containers/`
-4. Removes the key file from `/etc/safebox/containers/`
+4. Removes the key directory `/run/safebox/keys/<name>/` from tmpfs
 
 It does NOT stop the Docker container — that's the orchestrator's responsibility. After destroy, the container's Safebox Node will find its bind-mounted socket file gone, and any attempt to call `callSystem()` will fail with `ECONNREFUSED`.
 
@@ -412,7 +410,7 @@ Safebox/host/container-destroy       → host quorum
 | `BAD_REQUEST`              | Schema problem                                                     |
 | `FORBIDDEN_ACTION`         | Action not in `allowedActions`, or dnf from non-`_host`            |
 | `WRONG_SOCKET`             | Request body's `managedContainer` doesn't match calling socket     |
-| `WORKSPACE_NOT_FOUND`      | Host workspace path doesn't resolve (migrate tool only)            |
+| `FORBIDDEN_WORKSPACE`      | `workspaceRoot` names anything but the caller's own workspace      |
 | `IMAGE_NOT_ALLOWED`        | `/test` container doesn't match `imagePattern`                     |
 | `TEST_NOT_FOUND`           | Unknown testId                                                     |
 | `ALREADY_EXISTS`           | `/containers/create` for a name already declared                   |
@@ -438,7 +436,7 @@ Safebox/host/container-destroy       → host quorum
 If you've been integrating against an earlier TCP-based version:
 
 - **Transport changed.** The System component no longer listens on `127.0.0.1:7780`. Replace `host: '127.0.0.1', port: 7780` with `socketPath: '/run/safebox/system.sock'` in HTTP requests from inside a container, or `socketPath: '/run/safebox/control.sock'` from host-side orchestration code.
-- **Keys are now per-container.** Each container reads from `/etc/safebox/system.hmac` (bind-mounted from the host's `/etc/safebox/containers/<name>.hmac`). Host-side orchestration code reads from `/etc/safebox/system.hmac` (the master).
+- **Keys are now per-container.** Each container reads from `/run/safebox/keys/system.hmac` (the host's `/run/safebox/keys/<name>/system.hmac` on tmpfs, bind-mounted read-only). The key is never placed in the workspace. Host-side orchestration code reads from `/etc/safebox/system.hmac` (the master).
 - **New error: `WRONG_SOCKET`.** Returned when a request body's `managedContainer` doesn't match the socket identity. Inside a container, you usually don't need to set `managedContainer` at all — the System component fills it in.
 - **New endpoints: `/containers/create`, `/containers/destroy`, `GET /containers`.** Reachable only from the control socket. The lifecycle for managing apps.
 - **`/test` is only reachable from per-container sockets** (tests run in clones of THAT container's data).

@@ -1,0 +1,63 @@
+{
+  "manifestVersion": "1.0",
+  "model": "Qwen/Qwen3.8-Flash-Next",
+  "modelId": "qwen3.8-flash-next",
+  "displayName": "Qwen3.8-Flash-Next",
+  "runnerType": "vllm",
+  "license": "Apache-2.0",
+
+  "hardware": {
+    "minGpus": 1,
+    "gpuModel": "H100-80GB",
+    "minVramPerGpu": 81920,
+    "minRamMb": 65536,
+    "diskGb": 80
+  },
+
+  "inference": {
+    "architecture": "MoE",
+    "parameters": "~35B total / ~4B active",
+    "attention": "GQA",
+    "contextLength": 131072,
+    "kvBytesPerToken": 640,
+    "quantization": null,
+    "dtype": "bf16",
+    "tensorParallel": 1
+  },
+
+  "vllm": {
+    "modelArgs": {
+      "trust_remote_code": true,
+      "tensor_parallel_size": 1,
+      "max_model_len": 131072,
+      "enable_prefix_caching": true,
+      "gpu_memory_utilization": 0.90,
+      "enforce_eager": false
+    },
+    "engineArgs": {
+      "enable_chunked_prefill": true,
+      "max_num_batched_tokens": 32768
+    }
+  },
+
+  "protocols": {
+    "chat": true,
+    "complete": true,
+    "embed": false
+  },
+
+  "cost": {
+    "safebux": 0.4,
+    "unit": "request"
+  },
+
+  "weights": {
+    "files": [
+      "model-00001-of-00008.safetensors",
+      "model-00008-of-00008.safetensors"
+    ],
+    "totalSizeGb": 68,
+    "format": "safetensors",
+    "sha256": "PLACEHOLDER — real hash set by M-of-N governance signing"
+  }
+}

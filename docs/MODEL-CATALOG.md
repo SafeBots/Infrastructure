@@ -2,40 +2,7 @@
 
 **Comprehensive list of open-source models for all Safebox protocols**
 
-**Last Updated:** June 2026
-
-> **Part of a unified artifact framework.** Models, RPM packages, npm packages, and pip packages all flow through the same M-of-N hash-allowlist pattern. See [INDUCTIVE-TRUST.md](./INDUCTIVE-TRUST.md) for the auditor-facing proof of the property, and [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for the operational workflow. The unified manifests live under [`config/artifacts/`](../config/artifacts/) — models at `config/artifacts/models/`, RPMs at `config/artifacts/rpm/`, npm at `config/artifacts/npm/`, pip at `config/artifacts/pip/`.
-
----
-
-## 🎯 Curated Roster — Apache 2.0 / MIT Picks (Batch 1)
-
-These six models are the **commercial-clean baseline** every Safebox deployment ships with. Each has Apache 2.0 or MIT licensing, no revenue caps, no non-commercial restrictions, no gated-license click-through. Customers can deploy without legal review. Manifests live in [`config/artifacts/models/`](../config/artifacts/models/); installation flow in [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md).
-
-| Model | Modality | License | Hardware | Manifest |
-|---|---|---|---|---|
-| **YuE-s1-7B** | Music (full songs from lyrics + style) | Apache 2.0 | 24 GB GPU | [yue-s1-7b.json](../config/artifacts/models/yue-s1-7b.json) |
-| **Mochi 1** | Video (text→video, 5.4s @ 30fps) | Apache 2.0 | 60 GB GPU (H100) | [mochi-1-preview.json](../config/artifacts/models/mochi-1-preview.json) |
-| **FLUX.1 [schnell]** | Image (text→image, 4-step) | Apache 2.0 | 17 GB GPU | [flux-1-schnell.json](../config/artifacts/models/flux-1-schnell.json) |
-| **Kokoro 82M v1.0** | Speech (text→speech, 9 langs) | Apache 2.0 | CPU OK; 4 GB GPU optional | [kokoro-82m.json](../config/artifacts/models/kokoro-82m.json) |
-| **Whisper Large v3** | Transcription (99 langs) | MIT | 10 GB GPU; CPU OK | [whisper-large-v3.json](../config/artifacts/models/whisper-large-v3.json) |
-| **TripoSR** | 3D (single image → mesh, sub-1s) | MIT | 6 GB GPU; CPU OK | [triposr.json](../config/artifacts/models/triposr.json) |
-| **Nemotron 3 Nano Omni** | Multimodal (vision + audio + video + text in one model) | NVIDIA Open Model License | 24 GB GPU; NVFP4 fits in 16 GB | [nemotron-3-nano-omni.json](../config/artifacts/models/nemotron-3-nano-omni.json) |
-
-**Why these specific six:**
-- They span every Safebox protocol with at least one option (LLMs are handled separately via the vLLM and llama.cpp runners — see [llama-cpp/README.md](../model-runners/llama-cpp/README.md))
-- They're all Apache 2.0 or MIT — no license-classification work needed for customers
-- They're each the cleanest-licensed serious option in their modality as of June 2026
-
-**Roadmap (Batch 2 — Apache 2.0 quality upgrades):**
-Magenta RealTime v1 (Apache+CC-BY 4.0 music), Wan 2.2 (Apache 2.0 video at MoE 14B), Chatterbox (MIT voice cloning), Parler-TTS (Apache 2.0 TTS).
-
-**Roadmap (Batch 3 — quality with license-review burden):**
-Stable Audio 3 (Stability Community), HunyuanVideo 1.5 (Tencent Community), Hunyuan3D 2.1 (Tencent Community), FLUX.1 [dev] (BFL non-commercial — needs separate commercial agreement).
-
-**Skipped entirely** (CC-BY-NC or other non-commercial): MusicGen / AudioGen (Meta), XTTS v2 (Coqui CPML), F5-TTS (CC-BY-NC), Voxtral (CC-BY-NC), LeVo 2, Khala.
-
-See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes, run M-of-N signing, and roll forward/backward through model versions.
+**Last Updated:** October 2026
 
 ---
 
@@ -98,9 +65,58 @@ See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes,
 - Use: Production agent work, software engineering
 - SAFEBUX: 1.2/request
 
+**5. Kimi K3.1 Pro (Moonshot AI)**
+- License: MIT
+- Params: 2.8T total, 104B active per token (sparse MoE with Kimi Delta Attention)
+- Hardware: 8× H100 80GB (bf16, tensor-parallel 8)
+- Context: 1,048,576 tokens (1M)
+- Modalities: Text + image input, text output
+- Benchmark: Artificial Analysis Intelligence Index 55 (4th of 215 models), Terminal-Bench 4.0 67% (independent), BenchCAD w/ tools 92.7%, Hallu Bench Hard 8.3% error rate
+- Reasoning: Low / medium / max reasoning levels
+- Speed: ~40 tok/sec on 8× H100
+- Use: Complex reasoning, agentic coding, long-context knowledge work. Competitive with Claude Opus 5.5 and GPT-6 Astra on vendor benchmarks.
+- Weights: Open weights released November 4, 2026 (moonshotai/Kimi-K3.1-Pro on Hugging Face)
+- SAFEBUX: 2.0/request
+
+**6. Ornith-1.0-397B (Ornith AI)**
+- License: MIT
+- Params: 397B MoE (architecture: qwen3_5_moe; active params TBD at weight inspection)
+- Base: Post-trained on Qwen 3.5 via self-improving RL (joint scaffold + solution optimization)
+- Hardware: 8× H100 80GB (bf16, tensor-parallel 8)
+- Context: 262,144 tokens (256K)
+- Benchmark: SWE-Bench Verified 82.4, SWE-Bench Pro 62.2, SWE-Bench Multilingual 78.9, Terminal-Bench 2.1 77.5 (Terminus-2) / 78.2 (Claude Code), NL2Repo 48.2, Claw-eval 77.1, SWE Atlas QnA 41.2 / RF 42.6 / TW 39.1
+- Speed: TBD
+- Use: Agentic coding, complex software engineering. Competitive with Claude Opus 4.7 on coding benchmarks. State-of-the-art among open-source models at this size.
+- Weights: ornith-ai/Ornith-1.0-397B (FP8 variant also available)
+- SAFEBUX: TBD
+
+**7. Ornith-1.0-35B (Ornith AI)**
+- License: MIT
+- Params: 35B MoE (architecture: qwen3_5_moe)
+- Base: Post-trained on Qwen 3.5
+- Hardware: 1× H100 80GB (bf16) or 1× A100 80GB (4-bit quantized)
+- Context: 262,144 tokens (256K)
+- Benchmark: SWE-Bench Verified 75.6, SWE-Bench Pro 50.4, Terminal-Bench 2.1 64.2 (Terminus-2), NL2Repo 34.6, Claw-eval 69.8
+- Speed: TBD
+- Use: Efficient agentic coding on single-GPU setups. Strong SWE-Bench scores for its size.
+- Weights: ornith-ai/Ornith-1.0-35B (GGUF and FP8 variants available)
+- SAFEBUX: 0.5/request
+
+**8. Ornith-1.0-9B (Ornith AI)**
+- License: MIT
+- Params: 9B dense
+- Base: Post-trained on Gemma 4
+- Hardware: 1× A100 40GB (bf16) or 1× RTX 4090 (4-bit)
+- Context: 256K (estimated; verify at weight inspection)
+- Benchmark: TBD (scores not published for 9B on model card)
+- Speed: TBD
+- Use: Lightweight agentic coding, edge deployment, local development
+- Weights: ornith-ai/Ornith-1.0-9B (GGUF variant available)
+- SAFEBUX: 0.3/request
+
 ### **Tier 2: Efficient Models**
 
-**5. LLaMA 3.1 8B**
+**9. LLaMA 3.1 8B**
 - License: Llama 3.1 Community
 - Hardware: 1× A100 40GB
 - Speed: 150 tok/sec
@@ -108,7 +124,7 @@ See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes,
 - Use: Fast inference, edge deployment
 - SAFEBUX: 0.3/request
 
-**6. Qwen 2.5 Coder 32B**
+**10. Qwen 2.5 Coder 32B**
 - License: Apache 2.0
 - Hardware: 1× A100 80GB or 2× A100 40GB
 - Speed: 95 tok/sec
@@ -116,7 +132,7 @@ See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes,
 - Use: Code generation, debugging
 - SAFEBUX: 0.5/request
 
-**7. Mistral Small 22B**
+**11. Mistral Small 22B**
 - License: Apache 2.0
 - Hardware: 1× A100 80GB
 - Speed: 110 tok/sec
@@ -124,7 +140,7 @@ See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes,
 - Use: Multilingual, function calling
 - SAFEBUX: 0.4/request
 
-**8. Qwen 3.6-35B-A3B**
+**12. Qwen 3.6-35B-A3B**
 - License: Apache 2.0
 - Hardware: 1× RTX 4090
 - Speed: ~100 tok/sec
@@ -134,7 +150,7 @@ See [ARTIFACT-UPDATES.md](./ARTIFACT-UPDATES.md) for how communities pin hashes,
 
 ### **Embeddings**
 
-**9. BGE-Large-EN-v1.5**
+**13. BGE-Large-EN-v1.5**
 - License: MIT
 - Hardware: 1× T4 GPU
 - Speed: 2,000 embeddings/sec

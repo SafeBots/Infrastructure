@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by safebox-infra or safebox-dns.
+# Produces the hardware memory-encryption (confidential compute) report that
+# registration and announce send next to the TPM quote. Needed because
+# /dev/sev-guest, /dev/tdx_guest and the vTPM NV index are root-only.
+# Exactly one input:
+#
+#   argv[1] report-data-hex   ^[0-9a-f]{128}$   (64 bytes; dnsclient passes
+#                             sha256(nonce) || sha256(quote.message), which
+#                             binds this report to the TPM quote it travels with)
+#
+# Source, in order of preference:
+#
+#   /dev/sev-guest present      AMD SEV-SNP attestation report via the
+#                               SNP_GET_REPORT ioctl (ctypes, no extra tools).
+#                               GCP Confidential VMs, AWS SEV-SNP instances.
+#   Azure (DMI chassis tag)     The paravisor (HCL) writes the SEV-SNP report
+#                               into the vTPM at NV index 0x01400001 and the
+#                               runtime data at 0x01400002; no /dev/sev-guest
+#                               is exposed to the guest. REPORT_DATA there is
+#                               sha256(runtime data), which carries the vTPM
+#                               AK, so the report is bound to the quote
+#                               through the AK rather than through argv[1].
+#   /dev/tdx_guest present      Intel TDX: a quote from configfs-tsm when the
+#                               kernel offers it (verifiable against Intel
+#                               roots), else the TDREPORT from
+#                               TDX_CMD_GET_REPORT0 (verifiable only by a
+#                               quoting enclave on the same host).
+#   none of the above           {"type":"none"}: the box was launched without
+#                               confidential compute. dnsclient refuses to
+#                               register unless the image was built with
+#                               allowUnencryptedMemory.
+#
+# Output: one JSON object on stdout:
+#   { "type": "sev-snp" | "tdx" | "none",
+#     "report": base64 of the raw report bytes,
+#     "reportData": argv[1],
+#     "vcek": VCEK certificate PEM if a local cache exists, else null
+#             (the control plane fetches it from AMD KDS otherwise),
+#     "source": where the report came from,
+#     "runtimeData": (Azure only) the HCL runtime data JSON as a string }
+#
+# Nothing secret is printed. See docs/HARDENING-PLAN.md fix 8.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly AZURE_ASSET_TAG='7783-7084-3265-9085-8269-3286-77'
+readonly AZURE_SNP_NV_INDEX=0x01400001
+readonly AZURE_RUNTIME_NV_INDEX=0x01400002
+# VCEK cache written by an operator or a future fetcher; never fetched here
+# (the wrapper must not talk to the network).
+readonly VCEK_CACHE=/var/lib/safebox/dns/vcek.pem
+
+die() { printf 'safebox-confidential-report: %s\n' "$*" >&2; exit 2; }
+
+[[ $# -eq 1 ]] || die "usage: safebox-confidential-report <report-data-hex>"
+[[ $1 == -* ]] && die "argument may not start with '-'"
+report_data=$1
+[[ $report_data =~ ^[0-9a-f]{128}$ ]] || die "report-data must be 128 lowercase hex characters (64 bytes)"
+
+command -v python3 >/dev/null || die "python3 not installed"
+
+dmi() {
+    local f="/sys/class/dmi/id/$1"
+    if [[ -r $f ]]; then tr -d '\n' <"$f"; fi
+}
+
+vcek_json_arg() {
+    # Prints the VCEK PEM when a cache exists; python turns "" into null.
+    if [[ -r $VCEK_CACHE ]] && grep -q -- '-----BEGIN CERTIFICATE-----' "$VCEK_CACHE"; then
+        cat "$VCEK_CACHE"
+    fi
+}
+
+# ── Common emitter: python reads the raw report on stdin ─────────────────────
+# argv: type source reportDataHex vcekPem runtimeDataJson
+emit() {
+    python3 -I - "$@" <<'PY'
+import base64, json, sys
+typ, source, report_data, vcek, runtime = sys.argv[1:6]
+raw = sys.stdin.buffer.read()
+out = {"type": typ, "report": base64.b64encode(raw).decode(),
+       "reportData": report_data, "vcek": vcek or None, "source": source}
+if runtime:
+    out["runtimeData"] = runtime
+print(json.dumps(out))
+PY
+}
+
+# ── AMD SEV-SNP via /dev/sev-guest ───────────────────────────────────────────
+snp_report() {
+    python3 -I - "$report_data" <<'PY'
+import ctypes, fcntl, os, sys
+
+# Kernel ABI (include/uapi/linux/sev-guest.h), stable since the driver landed
+# in 5.19 and unchanged through 6.8+; the layout below is the 6.8 header.
+#
+#   struct snp_report_req {            96 bytes
+#       __u8  user_data[64];           /* REPORT_DATA echoed into the report */
+#       __u32 vmpl;                    /* VMPL to request the report at */
+#       __u8  rsvd[28];
+#   };
+#   struct snp_report_resp {           4000 bytes
+#       __u8  data[4000];              /* MSG_REPORT_RSP: status u32, report_size
+#                                         u32, reserved[24], report[report_size] */
+#   };
+#   struct snp_guest_request_ioctl {   32 bytes (natural alignment: req_data at 8)
+#       __u8  msg_version;             /* message version; 1 */
+#       __u64 req_data;                /* userspace pointer to snp_report_req */
+#       __u64 resp_data;               /* userspace pointer to snp_report_resp */
+#       union { __u64 exitinfo2;       /* firmware/VMM error on failure */
+#               struct { __u32 fw_error; __u32 vmm_error; }; };
+#   };
+#   #define SNP_GET_REPORT _IOWR('S', 0x0, struct snp_guest_request_ioctl)
+
+class SnpReportReq(ctypes.Structure):
+    _fields_ = [("user_data", ctypes.c_uint8 * 64),
+                ("vmpl", ctypes.c_uint32),
+                ("rsvd", ctypes.c_uint8 * 28)]
+
+class SnpReportResp(ctypes.Structure):
+    _fields_ = [("data", ctypes.c_uint8 * 4000)]
+
+class SnpGuestRequestIoctl(ctypes.Structure):
+    _fields_ = [("msg_version", ctypes.c_uint8),
+                ("req_data", ctypes.c_uint64),
+                ("resp_data", ctypes.c_uint64),
+                ("exitinfo2", ctypes.c_uint64)]
+
+assert ctypes.sizeof(SnpReportReq) == 96
+assert ctypes.sizeof(SnpReportResp) == 4000
+assert ctypes.sizeof(SnpGuestRequestIoctl) == 32
+
+def _IOWR(typ, nr, size):
+    # asm-generic/ioctl.h: dir(2 bits)<<30 | size(14 bits)<<16 | type<<8 | nr
+    IOC_WRITE, IOC_READ = 1, 2
+    return ((IOC_READ | IOC_WRITE) << 30) | (size << 16) | (ord(typ) << 8) | nr
+
+SNP_GET_REPORT = _IOWR('S', 0x0, ctypes.sizeof(SnpGuestRequestIoctl))  # 0xC0205300
+
+req = SnpReportReq()
+user_data = bytes.fromhex(sys.argv[1])
+ctypes.memmove(req.user_data, user_data, 64)
+req.vmpl = 0
+resp = SnpReportResp()
+arg = SnpGuestRequestIoctl()
+arg.msg_version = 1
+arg.req_data = ctypes.addressof(req)
+arg.resp_data = ctypes.addressof(resp)
+
+fd = os.open("/dev/sev-guest", os.O_RDWR)
+try:
+    fcntl.ioctl(fd, SNP_GET_REPORT, arg)
+except OSError as e:
+    sys.stderr.write("SNP_GET_REPORT failed: %s (exitinfo2=0x%x)\n" % (e, arg.exitinfo2))
+    sys.exit(2)
+finally:
+    os.close(fd)
+
+data = bytes(resp.data)
+status = int.from_bytes(data[0:4], "little")
+report_size = int.from_bytes(data[4:8], "little")
+if status != 0:
+    sys.stderr.write("SNP firmware returned status 0x%x\n" % status)
+    sys.exit(2)
+if not (0x4A0 <= report_size <= 4000 - 32):
+    sys.stderr.write("SNP report_size %d out of range\n" % report_size)
+    sys.exit(2)
+report = data[32:32 + report_size]
+# REPORT_DATA lives at offset 0x50 (64 bytes) of the report; refuse a report
+# that does not echo what we asked for.
+if report[0x50:0x90] != user_data:
+    sys.stderr.write("SNP report REPORT_DATA does not match the request\n")
+    sys.exit(2)
+sys.stdout.buffer.write(report)
+PY
+}
+
+# ── Azure CVM: SNP report from the vTPM NV index ─────────────────────────────
+azure_snp_report() {
+    command -v tpm2_nvread >/dev/null || die "tpm2_nvread not installed"
+    [[ -c /dev/tpmrm0 ]] || die "/dev/tpmrm0 absent"
+    export TPM2TOOLS_TCTI=device:/dev/tpmrm0
+    local work
+    work=$(mktemp -d /run/safebox/ccreport.XXXXXX)
+    trap 'rm -rf "$work"' RETURN
+    tpm2_nvread -C o "$AZURE_SNP_NV_INDEX" -o "$work/hcl" >/dev/null 2>&1 \
+        || die "tpm2_nvread $AZURE_SNP_NV_INDEX failed (not a Confidential VM?)"
+    # Optional: the runtime data (vTPM AK public, user data) the report hashes.
+    tpm2_nvread -C o "$AZURE_RUNTIME_NV_INDEX" -o "$work/runtime" >/dev/null 2>&1 || true
+    python3 -I - "$work/hcl" "$work/runtime" "$report_data" "$(vcek_json_arg)" <<'PY'
+import base64, json, sys
+# HCL report blob at NV 0x01400001:
+#   struct hw_report_header { u32 signature "HCLA"; u32 version; u32 report_size;
+#                             u32 request_type; u32 status; u32 reserved[3]; }  32 bytes
+#   u8 report[report_size]                                  (SNP report, 0x4A0)
+#   struct hcl_data_header { u32 data_size; u32 data_type; ... }  then the
+#   runtime data JSON (also readable at NV 0x01400002).
+blob = open(sys.argv[1], "rb").read()
+runtime = b""
+try:
+    runtime = open(sys.argv[2], "rb").read()
+except OSError:
+    pass
+if blob[0:4] == b"HCLA":
+    report_size = int.from_bytes(blob[8:12], "little")
+    if not (0x4A0 <= report_size <= len(blob) - 32):
+        sys.stderr.write("HCL header report_size %d out of range\n" % report_size)
+        sys.exit(2)
+    report = blob[32:32 + report_size]
+    tail = blob[32 + report_size:]
+else:
+    # Some HCL versions write the bare report.
+    report = blob[:0x4A0]
+    tail = blob[0x4A0:]
+if int.from_bytes(report[0:4], "little") not in (2, 3):
+    sys.stderr.write("NV blob does not start with an SNP report (version %d)\n"
+                     % int.from_bytes(report[0:4], "little"))
+    sys.exit(2)
+src = runtime if runtime else tail
+runtime_json = ""
+i, j = src.find(b"{"), src.rfind(b"}")
+if 0 <= i < j:
+    try:
+        runtime_json = json.dumps(json.loads(src[i:j + 1].decode("utf-8")), separators=(",", ":"))
+    except (ValueError, UnicodeDecodeError):
+        runtime_json = ""
+out = {"type": "sev-snp", "report": base64.b64encode(report).decode(),
+       "reportData": sys.argv[3], "vcek": sys.argv[4] or None,
+       "source": "azure-vtpm-nv-0x01400001"}
+if runtime_json:
+    out["runtimeData"] = runtime_json
+print(json.dumps(out))
+PY
+}
+
+# ── Intel TDX ────────────────────────────────────────────────────────────────
+tdx_report() {
+    # configfs-tsm (kernel >= 6.7): a quote the control plane can verify
+    # against Intel's PCS/PCCS, bound to our 64-byte inblob.
+    local tsm=/sys/kernel/config/tsm/report
+    if [[ -d $tsm ]]; then
+        local d
+        d=$(mktemp -d "$tsm/safebox.XXXXXX") || die "cannot create a tsm report entry"
+        trap 'rmdir "$d" 2>/dev/null || true' RETURN
+        printf '%s' "$report_data" | python3 -I -c 'import sys; sys.stdout.buffer.write(bytes.fromhex(sys.stdin.read()))' >"$d/inblob"
+        local provider
+        provider=$(tr -d '\n' <"$d/provider" 2>/dev/null || true)
+        [[ $provider == tdx_guest* ]] || die "tsm provider is '$provider', expected tdx_guest"
+        emit tdx "configfs-tsm/$provider" "$report_data" "$(vcek_json_arg)" "" <"$d/outblob"
+        return
+    fi
+    python3 -I - "$report_data" <<'PY'
+import ctypes, fcntl, os, sys
+# include/uapi/linux/tdx-guest.h (kernel >= 6.2; unchanged in 6.8):
+#   #define TDX_REPORTDATA_LEN 64
+#   #define TDX_REPORT_LEN     1024
+#   struct tdx_report_req {            1088 bytes
+#       __u8 reportdata[TDX_REPORTDATA_LEN];   /* in: caller data */
+#       __u8 tdreport[TDX_REPORT_LEN];         /* out: TDREPORT_STRUCT */
+#   };
+#   #define TDX_CMD_GET_REPORT0 _IOWR('T', 1, struct tdx_report_req)
+class TdxReportReq(ctypes.Structure):
+    _fields_ = [("reportdata", ctypes.c_uint8 * 64), ("tdreport", ctypes.c_uint8 * 1024)]
+assert ctypes.sizeof(TdxReportReq) == 1088
+
+def _IOWR(typ, nr, size):
+    return (3 << 30) | (size << 16) | (ord(typ) << 8) | nr
+TDX_CMD_GET_REPORT0 = _IOWR('T', 1, ctypes.sizeof(TdxReportReq))  # 0xC4405401
+
+req = TdxReportReq()
+ctypes.memmove(req.reportdata, bytes.fromhex(sys.argv[1]), 64)
+fd = os.open("/dev/tdx_guest", os.O_RDWR)
+try:
+    fcntl.ioctl(fd, TDX_CMD_GET_REPORT0, req)
+except OSError as e:
+    sys.stderr.write("TDX_CMD_GET_REPORT0 failed: %s\n" % e)
+    sys.exit(2)
+finally:
+    os.close(fd)
+sys.stdout.buffer.write(bytes(req.tdreport))
+PY
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+if [[ -c /dev/sev-guest ]]; then
+    snp_report | emit sev-snp "/dev/sev-guest SNP_GET_REPORT" "$report_data" "$(vcek_json_arg)" ""
+elif [[ $(dmi sys_vendor) == "Microsoft Corporation" && $(dmi chassis_asset_tag) == "$AZURE_ASSET_TAG" \
+        && -c /dev/tpmrm0 ]] && tpm2_nvread -C o "$AZURE_SNP_NV_INDEX" -s 4 >/dev/null 2>&1; then
+    azure_snp_report
+elif [[ -c /dev/tdx_guest ]]; then
+    # TDREPORT from the ioctl is only locally verifiable; emit() labels the
+    # source so the control plane knows which verifier to apply.
+    if [[ -d /sys/kernel/config/tsm/report ]]; then
+        tdx_report
+    else
+        tdx_report | emit tdx "/dev/tdx_guest TDX_CMD_GET_REPORT0 (TDREPORT, no quote)" "$report_data" "" ""
+    fi
+else
+    printf '{"type":"none","report":null,"reportData":"%s","vcek":null,"source":"no confidential compute device"}\n' "$report_data"
+fi

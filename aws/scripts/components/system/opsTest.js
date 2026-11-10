@@ -13,12 +13,29 @@
 //
 // Yields are NOT signed by the system — they're stdout from arbitrary
 // container code. The Safebox side handles them as data, not authority.
+//
+// Every privileged step goes through a root-owned wrapper in /opt/safebox/bin
+// (docs/HARDENING-PLAN.md, "Sudoers and wrappers"); nothing here calls docker
+// or zfs directly:
+//
+//   safebox-zfs snapshot <ds@snap>            snapshot the source dataset
+//   safebox-zfs clone    <ds@snap> <test-id>  clone to safebox-pool/clones/<id>,
+//                                             mounted at /srv/zfs-clones/<id>
+//   safebox-zfs destroy  <ds[@snap]> [recursive]
+//   safebox-test-run     <test-id> <image-ref> /srv/zfs-clones/<test-id>
+//   safebox-test-logs    <test-id>             docker logs -f
+//   safebox-test-stop    <test-id>             docker rm -f
+//
+// The wrapper's docker run has a fixed argument list, so envVars and
+// command are not supported any more (rejected with NOT_SUPPORTED), the
+// clone is mounted at /workspace, and the image ref must be
+// safebox-app-<x>:<tag>. There is no `docker wait` wrapper: the end of
+// `docker logs -f` is the exit signal, and the exit code is not available.
 
 'use strict';
 
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
-const path = require('path');
 
 const config = require('./config');
 const { BadRequest } = require('./opsSystem');
@@ -30,30 +47,33 @@ const MAX_KEEPALIVE_S = 600;
 const MIN_KEEPALIVE_S = 30;
 const DEFAULT_MAX_LIFETIME_S = 1800;
 const MAX_MAX_LIFETIME_S = 3600;
-const ZFS_CLONE_PARENT = 'safebox-pool/zfs-clones';
+const ZFS_CLONE_PARENT = 'safebox-pool/clones';
+const ZFS_TENANTS_PARENT = 'safebox-pool/tenants';
 const CLONE_MOUNT_BASE = '/srv/zfs-clones';
 
-const RE_CONTAINER = /^[a-zA-Z0-9][a-zA-Z0-9_./:-]{0,255}$/;
-const RE_ENVKEY = /^[A-Z][A-Z0-9_]{0,63}$/;
-// Dataset names must be 'safebox-pool/<segment>(/<segment>)*' where each
-// segment is non-empty and contains only [a-zA-Z0-9_.-]. No '.', '..', or
-// empty segments. This is a tightening from the original allowlist which
-// permitted '../' and '/./' substrings; zfs itself doesn't path-normalize
-// these (they're literal segment characters in zfs), so they wouldn't have
-// resolved to anything dangerous, but cleaner input is cleaner code.
-const RE_DATASET_SEGMENT = /^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$/;
-const RE_DATASET = /^safebox-pool\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/;
+const SUDO = '/usr/bin/sudo';
+const WRAPPER_DIR = '/opt/safebox/bin';
+const ZFS_WRAPPER  = WRAPPER_DIR + '/safebox-zfs';
+const TEST_RUN     = WRAPPER_DIR + '/safebox-test-run';
+const TEST_STOP    = WRAPPER_DIR + '/safebox-test-stop';
+const TEST_LOGS    = WRAPPER_DIR + '/safebox-test-logs';
+
+// The wrapper patterns, copied here so bad input is a 400 rather than a
+// wrapper refusal. The wrappers remain the authority.
+const RE_TEST_ID   = /^[a-z0-9-]{1,40}$/;
+const RE_CONTAINER = /^safebox-app-[a-z0-9-]+:[a-z0-9.-]+$/;
+const RE_DATASET   = /^safebox-pool\/(tenants|clones)\/[a-z0-9-]{1,40}$/;
+const RE_SNAPSHOT  = /^safebox-pool\/(tenants|clones)\/[a-z0-9-]{1,40}@[a-z0-9-]{1,40}$/;
+
 function validateDataset(s) {
-    if (typeof s !== 'string' || !RE_DATASET.test(s)) return false;
-    const parts = s.split('/');
-    // First segment is the pool name. Skip it; check the rest.
-    for (let i = 1; i < parts.length; i++) {
-        const seg = parts[i];
-        if (seg === '.' || seg === '..' || seg === '' || !RE_DATASET_SEGMENT.test(seg)) {
-            return false;
-        }
+    return typeof s === 'string' && RE_DATASET.test(s);
+}
+
+function assertTestId(id) {
+    if (typeof id !== 'string' || !RE_TEST_ID.test(id)) {
+        throw new BadRequest('testId must match ^[a-z0-9-]{1,40}$');
     }
-    return true;
+    return id;
 }
 
 // In-memory registry of all live + recently-terminated tests
@@ -68,8 +88,52 @@ function validateDataset(s) {
 //   }
 const tests = new Map();
 
-function newTestId() {
-    return 'tst_' + crypto.randomBytes(8).toString('hex');
+// Test ids are generated here, never taken from the caller, and carry the
+// owning tenant's name as a prefix: <tenant>-<12 hex>. The clone dataset
+// safebox-pool/clones/<test-id> therefore names its owner, which keeps
+// clones attributable on the host. The wrappers cap test-ids at 40 chars,
+// so a long tenant name is truncated to fit; ownership is NOT decided by
+// the prefix (see ownsDataset) but by the registry below.
+const TEST_ID_RANDOM_HEX = 12;
+const TEST_ID_MAX = 40;
+
+function tenantNameOf(managedContainer) {
+    return String(managedContainer).replace(/^safebox-app-/, '');
+}
+
+function newTestId(managedContainer) {
+    const rand = crypto.randomBytes(TEST_ID_RANDOM_HEX / 2).toString('hex');
+    let prefix = tenantNameOf(managedContainer)
+        .slice(0, TEST_ID_MAX - TEST_ID_RANDOM_HEX - 1)
+        .replace(/-+$/, '');
+    if (!RE_TEST_ID.test(prefix)) prefix = 'tst';
+    return assertTestId(`${prefix}-${rand}`);
+}
+
+// A tenant may clone only from its own data: its own tenant dataset
+// (safebox-pool/tenants/<tenant>, exactly) or a clone that belongs to one
+// of its own live tests (safebox-pool/clones/<test-id> with the registry
+// saying that test is the caller's). A prefix rule alone would not do:
+// '^foo(-[a-z0-9-]+)?$' also matches tenant 'foo-bar'.
+function ownsDataset(managedContainer, dataset) {
+    if (dataset === `${ZFS_TENANTS_PARENT}/${tenantNameOf(managedContainer)}`) return true;
+    const m = /^safebox-pool\/clones\/([a-z0-9-]{1,40})$/.exec(dataset);
+    if (!m) return false;
+    const t = tests.get(m[1]);
+    return !!t && t.managedContainer === managedContainer && t.cloneDataset === dataset;
+}
+
+// Live tests per tenant: running ones plus those still being created (the
+// create path awaits the wrappers, so two requests can race past a plain
+// count of the registry).
+const creating = new Map();  // managedContainer -> number in flight
+
+function liveTestCount(managedContainer) {
+    let n = creating.get(managedContainer) || 0;
+    for (const t of tests.values()) {
+        if (t.managedContainer === managedContainer && t.containerRunning) n++;
+    }
+    return n;
 }
 
 // ── Ring buffer ──────────────────────────────────────────────────────────────
@@ -116,15 +180,15 @@ function cleanupContainer(t, reason) {
     if (t.keepaliveTimer)  { clearTimeout(t.keepaliveTimer);  t.keepaliveTimer = null;  }
     if (t.lifetimeTimer)   { clearTimeout(t.lifetimeTimer);   t.lifetimeTimer = null;   }
     // Kill container (best-effort)
-    execFile('/usr/bin/sudo', ['/usr/bin/docker', 'rm', '-f', t.dockerName],
+    execFile(SUDO, ['-n', TEST_STOP, t.testId],
         { timeout: 30000 }, () => {});
     // Destroy ZFS clone (best-effort, run after docker so we don't try to destroy
     // a dataset that still has a mounted FS in use)
     setTimeout(() => {
-        execFile('/usr/bin/sudo', ['/usr/sbin/zfs', 'destroy', '-r', '--', t.cloneDataset],
+        execFile(SUDO, ['-n', ZFS_WRAPPER, 'destroy', t.cloneDataset, 'recursive'],
             { timeout: 30000 }, () => {});
         if (t.sourceSnap) {
-            execFile('/usr/bin/sudo', ['/usr/sbin/zfs', 'destroy', '--', t.sourceSnap],
+            execFile(SUDO, ['-n', ZFS_WRAPPER, 'destroy', t.sourceSnap],
                 { timeout: 30000 }, () => {});
         }
     }, 2000);
@@ -150,11 +214,16 @@ function rearmKeepalive(t) {
         remainingMs);
 }
 
-// ── Promisified zfs ops ──────────────────────────────────────────────────────
+// ── Promisified wrapper invocation ───────────────────────────────────────────
+// sudo -n so a misconfigured sudoers fails immediately instead of hanging on
+// a password prompt. argv is an array: no shell.
 
 function exec(bin, argv, timeoutMs) {
     return new Promise((resolve, reject) => {
-        execFile(bin, argv, { timeout: timeoutMs || 30000 }, (err, stdout, stderr) => {
+        execFile(bin, argv, {
+            timeout: timeoutMs || 30000,
+            env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LC_ALL: 'C.UTF-8' },
+        }, (err, stdout, stderr) => {
             if (err) {
                 const e = new Error(`${bin} ${argv.join(' ')}: ${err.message}\n${stderr || ''}`);
                 e.cause = err;
@@ -175,8 +244,8 @@ async function handleCreate(req) {
     if (!config.actionAllowed(req.managedContainer, 'test')) {
         throw new BadRequest(`'test' not in allowedActions for ${req.managedContainer}`, 'FORBIDDEN_ACTION');
     }
-    if (typeof req.container !== 'string' || !RE_CONTAINER.test(req.container)) {
-        throw new BadRequest('container ref invalid');
+    if (typeof req.container !== 'string' || req.container.length > 255 || !RE_CONTAINER.test(req.container)) {
+        throw new BadRequest('container ref invalid (must be safebox-app-<name>:<tag>)');
     }
     if (!config.imageMatches(req.managedContainer, req.container)) {
         throw new BadRequest(`container '${req.container}' does not match imagePattern for ${req.managedContainer}`, 'IMAGE_NOT_ALLOWED');
@@ -191,101 +260,81 @@ async function handleCreate(req) {
         throw new BadRequest(`maxLifetimeSeconds must be 1..${MAX_MAX_LIFETIME_S}`);
     }
 
-    // envVars
-    const envArgs = [];
-    if (req.envVars !== undefined) {
-        if (typeof req.envVars !== 'object' || req.envVars === null || Array.isArray(req.envVars)) {
-            throw new BadRequest('envVars must be an object');
-        }
-        const keys = Object.keys(req.envVars);
-        if (keys.length > 64) throw new BadRequest('envVars exceeds 64 entries');
-        for (const k of keys) {
-            if (!RE_ENVKEY.test(k)) throw new BadRequest(`envVar key '${k}' invalid`);
-            const v = req.envVars[k];
-            if (typeof v !== 'string') throw new BadRequest(`envVar value for ${k} must be string`);
-            if (v.length > 8192) throw new BadRequest(`envVar value for ${k} exceeds 8192 chars`);
-            if (/[\n\r\0]/.test(v)) throw new BadRequest(`envVar value for ${k} contains control chars`);
-            envArgs.push('-e', `${k}=${v}`);
-        }
+    // envVars / command: the wrapper's docker run has a fixed argument list
+    // and the image's own entrypoint runs. Refuse rather than silently drop.
+    if (req.envVars !== undefined && req.envVars !== null
+        && !(typeof req.envVars === 'object' && Object.keys(req.envVars).length === 0)) {
+        throw new BadRequest('envVars are not supported by safebox-test-run; bake them into the image', 'NOT_SUPPORTED');
+    }
+    if (req.command !== undefined && req.command !== null
+        && !(Array.isArray(req.command) && req.command.length === 0)) {
+        throw new BadRequest('command is not supported by safebox-test-run; use the image entrypoint', 'NOT_SUPPORTED');
     }
 
-    // command
-    let commandArgs = [];
-    if (req.command !== undefined) {
-        if (!Array.isArray(req.command)) throw new BadRequest('command must be an array');
-        if (req.command.length > 64) throw new BadRequest('command exceeds 64 elements');
-        for (const c of req.command) {
-            if (typeof c !== 'string') throw new BadRequest('command elements must be strings');
-            if (c.length > 4096) throw new BadRequest('command element exceeds 4096 chars');
-        }
-        commandArgs = req.command;
-    }
-
-    // sourceClone
-    let sourceClone = null;
+    // sourceClone: the dataset to snapshot and clone into the test's
+    // /workspace. Defaults to the caller's own tenant dataset. The wrapper
+    // only allows safebox-pool/(tenants|clones)/<name>, and there is no
+    // `zfs create` wrapper, so a clone always has a source.
+    let sourceClone;
     if (req.sourceClone !== undefined && req.sourceClone !== null) {
         if (!validateDataset(req.sourceClone)) {
-            throw new BadRequest('sourceClone invalid');
+            throw new BadRequest('sourceClone invalid (must be safebox-pool/(tenants|clones)/<name>)');
+        }
+        if (!ownsDataset(req.managedContainer, req.sourceClone)) {
+            throw new BadRequest('sourceClone must be the caller\'s own tenant dataset or a clone of one of its own live tests', 'FORBIDDEN_DATASET');
         }
         sourceClone = req.sourceClone;
+    } else {
+        sourceClone = `${ZFS_TENANTS_PARENT}/${tenantNameOf(req.managedContainer)}`;
+        if (!validateDataset(sourceClone)) {
+            throw new BadRequest('sourceClone is required: managedContainer name is not a tenant dataset name');
+        }
     }
 
-    const testId = newTestId();
+    // Per-tenant concurrency cap: each test is a ZFS clone plus a 2 GiB
+    // container, so an unbounded tenant could exhaust the pool and memory
+    // for everyone else.
+    const cap = config.maxConcurrentTests(req.managedContainer);
+    if (liveTestCount(req.managedContainer) >= cap) {
+        throw new BadRequest(`at most ${cap} concurrent tests per container`, 'TEST_LIMIT');
+    }
+
+    const testId = newTestId(req.managedContainer);
     const cloneDataset = `${ZFS_CLONE_PARENT}/${testId}`;
     const cloneMount = `${CLONE_MOUNT_BASE}/${testId}`;
     const dockerName = `safebox-test-${testId}`;
-    const sourceSnap = sourceClone ? `${sourceClone}@test-${testId}` : null;
-
-    // Set up the clone
-    try {
-        if (sourceClone) {
-            await exec('/usr/bin/sudo', ['/usr/sbin/zfs', 'snapshot', '--', sourceSnap]);
-            try {
-                await exec('/usr/bin/sudo', ['/usr/sbin/zfs', 'clone',
-                    '-o', `mountpoint=${cloneMount}`, '-o', 'quota=10G',
-                    '--', sourceSnap, cloneDataset]);
-            } catch (e) {
-                await exec('/usr/bin/sudo', ['/usr/sbin/zfs', 'destroy', '--', sourceSnap]).catch(() => {});
-                throw e;
-            }
-        } else {
-            await exec('/usr/bin/sudo', ['/usr/sbin/zfs', 'create',
-                '-o', `mountpoint=${cloneMount}`, '-o', 'quota=10G',
-                '--', cloneDataset]);
-        }
-    } catch (e) {
-        return { status: 'error', code: sourceClone ? 'ZFS_CLONE_FAILED' : 'ZFS_CREATE_FAILED',
-                 message: e.message.slice(0, 1024) };
+    const sourceSnap = `${sourceClone}@test-${testId}`;
+    if (!RE_SNAPSHOT.test(sourceSnap)) {
+        throw new BadRequest('derived snapshot name is not wrapper-valid');
     }
 
-    // docker run (detached so we don't block; we follow logs separately)
-    const dockerArgv = [
-        '/usr/bin/docker', 'run', '--detach', '--name', dockerName,
-        '--label', `safebox.image=${req.container}`,
-        '--label', `safebox.testId=${testId}`,
-        '--user', 'nobody',
-        '--network', 'none',
-        '--read-only',
-        '--tmpfs', '/tmp:size=64m,mode=1777',
-        '--security-opt', 'no-new-privileges',
-        '--cap-drop', 'ALL',
-        '-v', `${cloneMount}/code:/app/code:ro`,
-        '-v', `${cloneMount}/data:/app/data:rw`,
-        '--memory', '2g', '--cpus', '2',
-        '--stop-timeout', '5',
-        ...envArgs,
-        req.container,
-        ...commandArgs,
-    ];
-
+    creating.set(req.managedContainer, (creating.get(req.managedContainer) || 0) + 1);
     try {
-        // mkdir for the volumes BEFORE docker mounts them
-        await exec('/usr/bin/sudo', ['/usr/bin/mkdir', '-p', `${cloneMount}/code`, `${cloneMount}/data`]);
-        await exec('/usr/bin/sudo', dockerArgv);
-    } catch (e) {
-        await exec('/usr/bin/sudo', ['/usr/sbin/zfs', 'destroy', '-r', '--', cloneDataset]).catch(() => {});
-        if (sourceSnap) await exec('/usr/bin/sudo', ['/usr/sbin/zfs', 'destroy', '--', sourceSnap]).catch(() => {});
-        return { status: 'error', code: 'DOCKER_START_FAILED', message: e.message.slice(0, 1024) };
+        // Set up the clone: snapshot, then clone. The wrapper computes the
+        // mountpoint (/srv/zfs-clones/<test-id>) and creates it; no mkdir here.
+        try {
+            await exec(SUDO, ['-n', ZFS_WRAPPER, 'snapshot', sourceSnap]);
+            try {
+                await exec(SUDO, ['-n', ZFS_WRAPPER, 'clone', sourceSnap, testId]);
+            } catch (e) {
+                await exec(SUDO, ['-n', ZFS_WRAPPER, 'destroy', sourceSnap]).catch(() => {});
+                throw e;
+            }
+        } catch (e) {
+            return { status: 'error', code: 'ZFS_CLONE_FAILED', message: e.message.slice(0, 1024) };
+        }
+
+        // docker run through the wrapper (detached; logs are followed separately)
+        try {
+            await exec(SUDO, ['-n', TEST_RUN, testId, req.container, cloneMount], 120000);
+        } catch (e) {
+            await exec(SUDO, ['-n', ZFS_WRAPPER, 'destroy', cloneDataset, 'recursive']).catch(() => {});
+            await exec(SUDO, ['-n', ZFS_WRAPPER, 'destroy', sourceSnap]).catch(() => {});
+            return { status: 'error', code: 'DOCKER_START_FAILED', message: e.message.slice(0, 1024) };
+        }
+    } finally {
+        const n = (creating.get(req.managedContainer) || 1) - 1;
+        if (n > 0) creating.set(req.managedContainer, n); else creating.delete(req.managedContainer);
     }
 
     // Build the in-memory record
@@ -303,23 +352,20 @@ async function handleCreate(req) {
     };
     tests.set(testId, t);
 
-    // Follow logs (streams stdout/stderr into the ring buffer)
-    const logsProc = spawn('/usr/bin/sudo', ['/usr/bin/docker', 'logs', '-f', dockerName], {
+    // Follow logs (streams stdout/stderr into the ring buffer). `docker logs -f`
+    // ends when the container exits, which is the only exit signal available
+    // through the wrappers (there is no docker wait wrapper), so its exit is
+    // treated as container exit. The container's exit code is not exposed.
+    // sudo's use_pty merges the container's stdout and stderr onto one pty;
+    // everything arrives on stdout and is recorded as 'stdout'.
+    const logsProc = spawn(SUDO, ['-n', TEST_LOGS, testId], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LC_ALL: 'C.UTF-8' },
     });
     t.dockerProc = logsProc;
     logsProc.stdout.on('data', (chunk) => ringPush(t, 'stdout', chunk.toString('utf8')));
     logsProc.stderr.on('data', (chunk) => ringPush(t, 'stderr', chunk.toString('utf8')));
-
-    // Watch for container exit (separate process — docker wait blocks until exit)
-    const waitProc = spawn('/usr/bin/sudo', ['/usr/bin/docker', 'wait', dockerName], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let waitStdout = '';
-    waitProc.stdout.on('data', (chunk) => { waitStdout += chunk.toString(); });
-    waitProc.on('exit', () => {
-        const code = parseInt(waitStdout.trim(), 10);
-        if (!Number.isNaN(code)) t.exitCode = code;
+    logsProc.on('exit', () => {
         if (t.containerRunning) {
             cleanupContainer(t, 'container_exited');
         }
@@ -358,6 +404,9 @@ function checkOwner(t, callerIdentity) {
 }
 
 function handleKeepalive(testId, callerIdentity) {
+    if (typeof testId !== 'string' || !RE_TEST_ID.test(testId)) {
+        return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
+    }
     const t = tests.get(testId);
     const denied = checkOwner(t, callerIdentity); if (denied) return denied;
     if (!t) return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
@@ -367,6 +416,9 @@ function handleKeepalive(testId, callerIdentity) {
 }
 
 function handleYields(testId, since, callerIdentity) {
+    if (typeof testId !== 'string' || !RE_TEST_ID.test(testId)) {
+        return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
+    }
     const t = tests.get(testId);
     const denied = checkOwner(t, callerIdentity); if (denied) return denied;
     if (!t) return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
@@ -374,6 +426,9 @@ function handleYields(testId, since, callerIdentity) {
 }
 
 async function handleStop(testId, callerIdentity) {
+    if (typeof testId !== 'string' || !RE_TEST_ID.test(testId)) {
+        return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
+    }
     const t = tests.get(testId);
     const denied = checkOwner(t, callerIdentity); if (denied) return denied;
     if (!t) return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
@@ -388,6 +443,9 @@ async function handleStop(testId, callerIdentity) {
 }
 
 function handleStatus(testId, callerIdentity) {
+    if (typeof testId !== 'string' || !RE_TEST_ID.test(testId)) {
+        return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
+    }
     const t = tests.get(testId);
     const denied = checkOwner(t, callerIdentity); if (denied) return denied;
     if (!t) return { status: 'error', code: 'TEST_NOT_FOUND', message: 'no such test', _http: 404 };
@@ -428,58 +486,25 @@ function cleanupForContainer(managedContainer) {
     return killed;
 }
 
-// Called at System component startup to clean up any test containers and
-// ZFS clones left over from a previous System instance that crashed or was
-// killed before it could clean up.
-//
-// Without this, a System restart leaves orphan docker containers running
-// indefinitely with no keepalive watchdog to kill them (the watchdog state
-// lives in this process's `tests` Map). Filesystem clones also accumulate.
-//
-// We identify our containers by the safebox.testId label, which is set by
-// handleCreate at docker-run time.
+// Called at System component startup. Previously this listed containers
+// with `docker ps` and removed them; there is no wrapper for `docker ps`
+// and the system component no longer has docker access, so orphan test
+// containers from a crashed instance are not enumerable from here. They
+// are bounded by the wrapper's --pids-limit/--memory, use --network none,
+// and are removed by image rotation (a reboot clears /var/lib/docker's
+// running state). Kept as a no-op so server.js's startup sequence is
+// unchanged.
 async function startupCleanup() {
-    const { execFile } = require('child_process');
-    const util = require('util');
-    const execFileP = util.promisify(execFile);
-    let names = '';
-    try {
-        // List containers (running and stopped) with our test label
-        const { stdout } = await execFileP('sudo', [
-            '-n', 'docker', 'ps', '-a',
-            '--filter', 'label=safebox.testId',
-            '--format', '{{.Names}}',
-        ], { timeout: 15000 });
-        names = stdout.trim();
-    } catch (e) {
-        // If docker is unavailable or we can't sudo, log and continue. This
-        // is best-effort — a System startup failure here would prevent the
-        // whole component from coming up, which is worse than leaving
-        // orphans behind.
-        console.warn(`[system] startup cleanup: docker ps failed: ${e.message}`);
-        return { cleaned: 0, error: e.message };
-    }
-    if (!names) return { cleaned: 0 };
-    const containerNames = names.split('\n').filter(Boolean);
-    let killed = 0;
-    for (const name of containerNames) {
-        try {
-            await execFileP('sudo', ['-n', 'docker', 'rm', '-f', name], { timeout: 15000 });
-            killed++;
-        } catch (e) {
-            console.warn(`[system] startup cleanup: failed to rm ${name}: ${e.message}`);
-        }
-    }
-    console.log(`[system] startup cleanup: removed ${killed}/${containerNames.length} orphan test containers`);
-    // We could also try to clean up ZFS clones here, but the clone names
-    // are derived from testId which we don't have anymore. Leaving them
-    // is acceptable — they'll get cleaned up by the next zfs-rollback or
-    // by zfs-snapshot/clone in opsSystem if they collide.
-    return { cleaned: killed };
+    console.log('[system] startup cleanup: no docker enumeration wrapper; orphan test containers (if any) are left to the next reboot');
+    return { cleaned: 0 };
 }
 
 module.exports = {
     handleCreate, handleKeepalive, handleYields, handleStop, handleStatus,
     shutdownAll, cleanupForContainer, startupCleanup,
     _tests: tests,
+    _newTestId: newTestId,
+    _ownsDataset: ownsDataset,
+    _liveTestCount: liveTestCount,
+    RE_TEST_ID,
 };

@@ -1,0 +1,3 @@
+[submodule "Safenet"]
+	path = Safenet
+	url = https://github.com/SafeBots/Safenet.git

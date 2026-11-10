@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by safebox-infra or safebox-dns. Produces a TPM
+# quote over the policy PCRs for registration and attestation. Needed because
+# /dev/tpmrm0 is root/tss only. Exactly one input:
+#
+#   argv[1] nonce-hex   ^[0-9a-f]{64}$   (sha256 of the registration token)
+#
+# The attestation key (AK) is persistent at handle 0x81010002 so that the
+# control plane can pin the AK public key it saw at registration and verify
+# every later quote against the same key. If the handle is empty the AK is
+# created once (EK -> AK -> evictcontrol) under a lock; the EK is derived
+# from the TPM's seed, so the AK chain is bound to this TPM.
+#
+# Output: one JSON object on stdout:
+#   { "nonce": hex, "pcrList": "sha256:0,2,4,7,8,9,14,15", "akHandle": "0x81010002",
+#     "message": b64, "signature": b64, "pcrs": {"0": hex, "2": hex, ...},
+#     "akPublicPem": string }
+# message/signature are the raw tpm2_quote outputs (TPMS_ATTEST,
+# TPMT_SIGNATURE), base64 encoded. pcrs is the map tpmQuote.js consumes,
+# built from tpm2_quote's "values" PCR file (the concatenated 32-byte
+# digests in PCR_LIST order, the same bytes the quote's pcrDigest covers).
+# Nothing secret is printed.
+#
+# Scratch files live in a per-call mktemp directory under /run/safebox/quote
+# (tmpfs, root 0700) and are removed on exit. See docs/HARDENING-PLAN.md.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly AK_HANDLE=0x81010002
+readonly PCR_LIST='sha256:0,2,4,7,8,9,14,15'
+readonly QUOTE_BASE=/run/safebox/quote
+readonly LOCK_FILE="$QUOTE_BASE/.ak.lock"
+
+die() { printf 'safebox-tpm-quote: %s\n' "$*" >&2; exit 2; }
+
+[[ $# -eq 1 ]] || die "usage: safebox-tpm-quote <nonce-hex>"
+[[ $1 == -* ]] && die "argument may not start with '-'"
+nonce=$1
+[[ $nonce =~ ^[0-9a-f]{64}$ ]] || die "nonce must be 64 lowercase hex characters"
+
+for t in tpm2_quote tpm2_readpublic tpm2_createek tpm2_createak tpm2_evictcontrol jq base64 flock od; do
+    command -v "$t" >/dev/null || die "$t not installed"
+done
+[[ -c /dev/tpmrm0 ]] || die "/dev/tpmrm0 absent"
+export TPM2TOOLS_TCTI=device:/dev/tpmrm0
+
+# /run/safebox exists (unseal script); only the leaf is created here.
+if [[ ! -d $QUOTE_BASE ]]; then mkdir -m 0700 "$QUOTE_BASE"; fi
+work=$(mktemp -d "$QUOTE_BASE/call.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+# Create the persistent AK on first use. Serialised with flock so two
+# concurrent first calls cannot both try to evict into the same handle.
+ensure_ak() {
+    if tpm2_readpublic -c "$AK_HANDLE" >/dev/null 2>&1; then
+        return 0
+    fi
+    exec 9>"$LOCK_FILE"
+    flock 9
+    if tpm2_readpublic -c "$AK_HANDLE" >/dev/null 2>&1; then
+        flock -u 9
+        return 0
+    fi
+    tpm2_createek -c "$work/ek.ctx" -G rsa -u "$work/ek.pub" >/dev/null
+    tpm2_createak -C "$work/ek.ctx" -c "$work/ak.ctx" -G rsa -g sha256 -s rsassa \
+        -u "$work/ak.pub" -n "$work/ak.name" >/dev/null
+    tpm2_evictcontrol -C o -c "$work/ak.ctx" "$AK_HANDLE" >/dev/null
+    flock -u 9
+}
+
+ensure_ak
+
+tpm2_quote -c "$AK_HANDLE" -l "$PCR_LIST" -q "$nonce" -g sha256 -F values \
+    -m "$work/msg" -s "$work/sig" -o "$work/pcrs" >/dev/null
+# "values" format: eight sha256 digests back to back, in PCR_LIST order.
+pcr_hex=$(od -An -v -tx1 "$work/pcrs" | tr -d ' \n')
+[[ ${#pcr_hex} -eq $((8 * 64)) ]] || die "tpm2_quote wrote ${#pcr_hex} hex chars of PCR values, expected $((8 * 64))"
+pcr_json=$(jq -n --arg hex "$pcr_hex" \
+    '[0,2,4,7,8,9,14,15] | to_entries
+     | map({key: (.value|tostring), value: $hex[(.key*64):((.key+1)*64)]})
+     | from_entries')
+tpm2_readpublic -c "$AK_HANDLE" -o "$work/ak.pem" -f pem >/dev/null
+
+jq -n \
+    --arg nonce "$nonce" \
+    --arg pcrList "$PCR_LIST" \
+    --arg akHandle "$AK_HANDLE" \
+    --arg message "$(base64 -w0 "$work/msg")" \
+    --arg signature "$(base64 -w0 "$work/sig")" \
+    --argjson pcrs "$pcr_json" \
+    --rawfile akPublicPem "$work/ak.pem" \
+    '{nonce: $nonce, pcrList: $pcrList, akHandle: $akHandle,
+      message: $message, signature: $signature, pcrs: $pcrs, akPublicPem: $akPublicPem}'

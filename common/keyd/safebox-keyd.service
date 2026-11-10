@@ -1,0 +1,68 @@
+[Unit]
+Description=Safebox key daemon (holds the HMAC master; writes one derived key per tenant to tmpfs)
+Documentation=file:///opt/safebox/manifests/system.json
+# managed-containers.json is on the pool; the tenant list comes from it.
+After=var-lib-safebox.mount safebox-users.service
+Requires=safebox-users.service
+RequiresMountsFor=/var/lib/safebox
+
+[Service]
+# Root: it chowns each key directory to the tenant's instance uid. It takes
+# no input from any tenant: it reads one JSON file the operator writes and
+# a seed systemd hands it, and listens on nothing.
+Type=notify
+NotifyAccess=all
+User=root
+Group=root
+# /run/safebox/hmac-seed is root 0400 from the initramfs. systemd copies it
+# into this service's credentials directory; the process derives the master
+# from it in memory and holds it for the life of the boot. No other unit
+# carries LoadCredential= for the seed any more.
+LoadCredential=hmac-seed:/run/safebox/hmac-seed
+Environment=OPENSSL_CONF=/etc/ssl/openssl-pq.cnf
+ExecStart=/usr/bin/node /opt/safebox/keyd/safebox-keyd.js
+# The operator instance sends SIGHUP (through safebox-keyd-reload) after
+# every /containers/create and /containers/destroy.
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+MemoryMax=128M
+TasksMax=32
+LimitNOFILE=256
+
+# Nothing here needs privileges beyond chown/chmod on tmpfs.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# No MemoryDenyWriteExecute: node's JIT needs W+X pages.
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @chown
+SystemCallFilter=~@obsolete @debug @cpu-emulation @module @raw-io @reboot @swap @clock
+CapabilityBoundingSet=CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_FSETID
+# ProtectSystem=strict already leaves /var/lib/safebox read-only; the config
+# file is replaced by rename, so it is not pinned as a bind mount here.
+ReadOnlyPaths=/opt/safebox/keyd
+ReadWritePaths=/run/safebox
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=safebox-keyd
+
+[Install]
+WantedBy=multi-user.target

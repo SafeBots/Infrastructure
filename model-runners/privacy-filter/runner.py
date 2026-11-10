@@ -5,13 +5,12 @@ Detects and redacts PII (email, phone, address, SSN, etc.)
 """
 
 import asyncio
-import hashlib
-import hmac
 import json
 import logging
 import os
 import socket
 import stat
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -22,13 +21,16 @@ import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 import uvicorn
 
+# Import shared HMAC auth
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from safebox_auth import verify_hmac
+
 
 logger = logging.getLogger(__name__)
 
 # Configuration
 RUNNER_ID = os.getenv('RUNNER_ID', 'safebox-privacy-filter-1')
 SERVICE_ID = os.getenv('SERVICE_ID', 'privacy-filter-1')
-HMAC_KEY_PATH = os.getenv('HMAC_KEY_PATH', '/etc/safebox/model-api.key')
 
 # Transport configuration
 SAFEBOX_SOCKET_PATH = os.getenv('SAFEBOX_SOCKET_PATH', f'/run/safebox/services/{SERVICE_ID}.sock')
@@ -38,16 +40,7 @@ ENABLE_UNIX_SOCKET = os.getenv('ENABLE_UNIX_SOCKET', 'true').lower() == 'true'
 MODEL_NAME = "openai/privacy-filter"
 MODEL_PATH = os.getenv('MODEL_PATH', '/models/privacy-filter')
 
-# Load HMAC key
-try:
-    with open(HMAC_KEY_PATH, 'r') as f:
-        HMAC_KEY = f.read().strip()
-except Exception as e:
-    logger.warning(f"Could not load HMAC key from {HMAC_KEY_PATH}: {e}")
-    HMAC_KEY = None
-
 # State
-seen_nonces: Set[str] = set()
 request_count = 0
 total_tokens_processed = 0
 
@@ -77,6 +70,24 @@ class RedactResponse(BaseModel):
 # ============================================================================
 
 app = FastAPI(title="Privacy Filter Service")
+
+
+# ============================================================================
+# HMAC MIDDLEWARE
+# ============================================================================
+
+@app.middleware("http")
+async def hmac_middleware(request: Request, call_next):
+    """Verify HMAC on POST requests using shared safebox_auth."""
+    if request.method == "POST":
+        body = await request.body()
+        if not verify_hmac(request, body):
+            return Response(
+                content=json.dumps({"ok": False, "error": "HMAC verification failed"}),
+                status_code=401,
+                media_type="application/json",
+            )
+    return await call_next(request)
 
 
 # ============================================================================

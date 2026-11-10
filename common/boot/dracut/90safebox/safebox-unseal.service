@@ -1,0 +1,29 @@
+# safebox-unseal.service - unseal (or first-boot seal) the pool and HMAC keys.
+#
+# Ordered after udev has settled and the vTPM device exists, and before any
+# zfs-import unit and the initrd root target, so the pool key is loaded by
+# the time anything tries to import or mount. Requires= on the TPM device
+# means a VM launched without a vTPM fails this unit (and so the boot)
+# rather than running without one.
+
+[Unit]
+Description=Safebox: unseal pool and HMAC keys from the TPM
+DefaultDependencies=no
+ConditionKernelCommandLine=safebox.datadisk
+After=systemd-udev-settle.service dev-tpmrm0.device
+Requires=dev-tpmrm0.device
+Before=zfs-import.target zfs-import-cache.service zfs-import-scan.service initrd-root-fs.target
+# Fail the boot if we fail: initrd-root-fs.target requires us (see the
+# .requires symlink the dracut module creates), so it cannot be reached.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/safebox/safebox-unseal.sh
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=300
+
+[Install]
+WantedBy=initrd.target
+RequiredBy=initrd-root-fs.target

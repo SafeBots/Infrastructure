@@ -1,0 +1,70 @@
+{
+  "manifestVersion": "1.0",
+  "model": "Qwen/Qwen3.8-Omni-Flash",
+  "modelId": "qwen3.8-omni-flash",
+  "displayName": "Qwen3.8-Omni-Flash (Multimodal)",
+  "runnerType": "vllm",
+  "license": "Apache-2.0",
+
+  "hardware": {
+    "minGpus": 1,
+    "gpuModel": "H100-80GB",
+    "minVramPerGpu": 81920,
+    "minRamMb": 65536,
+    "diskGb": 90
+  },
+
+  "inference": {
+    "architecture": "MoE",
+    "parameters": "~35B total / ~4B active",
+    "attention": "GQA",
+    "contextLength": 131072,
+    "kvBytesPerToken": 640,
+    "quantization": null,
+    "dtype": "bf16",
+    "tensorParallel": 1,
+    "modalities": ["text", "vision", "audio"]
+  },
+
+  "vllm": {
+    "modelArgs": {
+      "trust_remote_code": true,
+      "tensor_parallel_size": 1,
+      "max_model_len": 131072,
+      "enable_prefix_caching": true,
+      "gpu_memory_utilization": 0.90,
+      "enforce_eager": false
+    },
+    "engineArgs": {
+      "enable_chunked_prefill": true,
+      "max_num_batched_tokens": 32768,
+      "limit_mm_per_prompt": {
+        "image": 4,
+        "audio": 1
+      }
+    }
+  },
+
+  "protocols": {
+    "chat": true,
+    "complete": true,
+    "embed": false
+  },
+
+  "cost": {
+    "safebux": 0.5,
+    "unit": "request"
+  },
+
+  "notes": "Native multimodal model — text, vision, and audio inputs. Preferred runner is u-omni for native inference with tree-structured KV cache; vllm serves as fallback.",
+
+  "weights": {
+    "files": [
+      "model-00001-of-00009.safetensors",
+      "model-00009-of-00009.safetensors"
+    ],
+    "totalSizeGb": 75,
+    "format": "safetensors",
+    "sha256": "PLACEHOLDER — real hash set by M-of-N governance signing"
+  }
+}

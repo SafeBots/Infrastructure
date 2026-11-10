@@ -1,0 +1,47 @@
+# safebox-firstboot.service - reads safebox-id, owner-pubkey and
+# launch-authorization from the cloud metadata service and writes
+# /var/lib/safebox/dns/dnsclient.json (owned by safebox-dns, uid 992).
+# Replaces cloud-init. See docs/HARDENING-PLAN.md, fix 2 and first-boot
+# step 4.
+#
+# Runs only until the box has announced itself; dnsclient touches
+# /var/lib/safebox/dns/announced after its first announce has been
+# delivered and this unit is skipped from then on. A failure here leaves
+# the box up but silent: it never announces.
+
+[Unit]
+Description=Safebox first-boot metadata reader
+ConditionPathExists=!/var/lib/safebox/dns/announced
+DefaultDependencies=no
+RequiresMountsFor=/var/lib/safebox
+After=network-online.target var-lib-safebox.mount
+Wants=network-online.target
+Before=safebox-dnsclient.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/safebox/safebox-firstboot.sh
+
+# Sandbox: the only things this script needs are the metadata address,
+# /var/lib/safebox (to create dns/ if an older pool lacks it, and to write
+# into it), and the ability to chown the output to safebox-dns.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/safebox
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=169.254.169.254 fd00:ec2::254
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

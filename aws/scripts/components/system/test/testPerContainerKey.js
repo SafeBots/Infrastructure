@@ -29,8 +29,12 @@ const fooKey2 = secret.derivePerContainerKey(master, 'safebox-app-foo', EPOCH_A)
 check('determinism: same inputs produce same output', fooKey1.equals(fooKey2));
 check('output is 32 bytes', fooKey1.length === 32);
 
-// Locked test vector
-const EXPECTED_FOO_EPOCH_A = '739cc9bf3e79366ccc7a91a341a738320e703df1d5967ba95480a3852ffcd5d2';
+// Locked test vector for the v1 derivation:
+//   HKDF-SHA256(ikm = master, salt = bytes(keyEpoch), info = "safebox-container-<name>-v1")
+// Re-locked when the derivation moved from the on-disk v2 scheme to the
+// sealed-seed scheme (docs/HARDENING-PLAN.md fix 1). The Safebox-side copy
+// must match this vector.
+const EXPECTED_FOO_EPOCH_A = 'a29930847845f157a9962f0f34b9642c59d34c069158fcaef22918cf72ea8f5e';
 check('locked test vector: safebox-app-foo with epoch A',
     fooKey1.toString('hex') === EXPECTED_FOO_EPOCH_A,
     'got: ' + fooKey1.toString('hex'));

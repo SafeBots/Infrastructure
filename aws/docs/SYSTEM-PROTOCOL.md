@@ -52,7 +52,7 @@ There is no daemon to install separately. The System component IS the Infrastruc
 
 ## Authentication
 
-Every request carries an HMAC-SHA-256 signature over a canonical envelope. The shared secret is provisioned at deployment time and lives in `/etc/safebox/system.hmac` (mode `0640`, group `safebox-infra-readers`, readable by both the System component and the Safebox Node user).
+Every request carries an HMAC-SHA-256 signature over a canonical envelope. The per-container secret is derived by the system component from a master it keeps in memory (HKDF of the seed the initramfs unseals from the TPM to `/run/safebox/hmac-seed`) and written to tmpfs at `/run/safebox/keys/<name>/system.hmac` (directory `0750`, file `0440`, owner `safebox-infra`, group = the host gid the container's app user maps to). That directory is bind-mounted read-only into the container, where Safebox Node reads it at `/run/safebox/keys/system.hmac`. The key is never written into the tenant's workspace.
 
 ### Signing
 
@@ -166,7 +166,7 @@ Used for package management (npm/pip/cargo/gem/composer/dnf), version control (g
 
 Actions split by scope:
 
-- **Per-app actions** (npm, pip, cargo, gem, composer, git, migrate, zfs-snapshot, zfs-rollback, test) operate on one container's filesystem or one container's ZFS volumes. They require a `workspaceRoot` that resolves under `/srv/encrypted/apps/<container>/` or one of the container's declared `zfsVolumes`. Any real `managedContainer` may declare these in its `allowedActions`.
+- **Per-app actions** (npm, pip, cargo, gem, composer, git, migrate, zfs-snapshot, zfs-rollback, test) operate on one container's filesystem or one container's ZFS volumes. The workspace is implied by the socket the request arrives on: it is always `/srv/safebox/tenants/<managedContainer>`, mounted at `/workspace` inside that container. `workspaceRoot` is optional and, if present, must equal exactly that path; anything else is rejected with `FORBIDDEN_WORKSPACE`. Any real `managedContainer` may declare these in its `allowedActions`.
 
 - **Host actions** (dnf) operate on the AMI itself — PHP, nginx, the kernel, docker. They have no `workspaceRoot`. **The only managedContainer allowed to invoke a host action is `_host`**, a pseudo-container declared at the top of `managed-containers.json`. A request like `{"managedContainer": "safebox-app-safebox", "tool": "dnf"}` is rejected with `FORBIDDEN_ACTION` even if `dnf` somehow ends up in that app's `allowedActions` — the scope check happens before the allowlist check.
 
@@ -192,7 +192,7 @@ Future host-wide actions (pool-level zfs, reboot, time sync) will follow the sam
 
 - `tool` — one of `npm`, `pip`, `cargo`, `gem`, `composer`, `dnf`, `git`, `migrate`, `zfs-snapshot`, `zfs-rollback`
 - `action` — tool-specific (see below)
-- `workspaceRoot` — required for tools that operate on a workspace (everything except `dnf`, `zfs-*`). Must resolve under `/srv/encrypted/apps/` or be a `zfsVolumes` path declared in `managed-containers.json` for this container
+- `workspaceRoot` — optional. If present it must be exactly `/srv/safebox/tenants/<managedContainer>` (the caller's own workspace, which the socket identity already implies); the host never resolves it
 - `packages` — required for mutating package-manager actions
 - `timeoutSeconds` — optional, default 1800, max 3600
 
@@ -207,7 +207,7 @@ Future host-wide actions (pool-level zfs, reboot, time sync) will follow the sam
 | `composer` | `install` `update` `remove` `list` `outdated`                      | Always with `--no-scripts --no-interaction`                      |
 | `dnf`      | `install` `update` `remove` `list` `check-update`                  | No `workspaceRoot`; system-wide. Exit code 100 mapped to success |
 | `git`      | `status` `diff` `log` `branch` `checkout` `add` `commit` `clone` `pull` | `clone` uses `workspaceParent`+`url`; `checkout` needs `ref`     |
-| `migrate`  | `run` `rollback` `status`                                          | Invokes `<workspaceRoot>/migrate.sh <action> [<target>]`         |
+| `migrate`  | `run` `rollback` `status`                                          | Runs `/bin/bash /workspace/migrate.sh <action> [<target>]` inside the caller's container (never on the host) |
 | `zfs-snapshot` | (no action)                                                    | Fields: `dataset`, `snapshotName`                                |
 | `zfs-rollback` | (no action)                                                    | Fields: `snapshot`, `force?`                                     |
 
@@ -231,7 +231,7 @@ Future host-wide actions (pool-level zfs, reboot, time sync) will follow the sam
 
 - `BAD_REQUEST` — schema / field validation failed
 - `FORBIDDEN_ACTION` — `managedContainer.allowedActions` does not include `tool`
-- `WORKSPACE_NOT_FOUND` — `workspaceRoot` does not resolve, or escapes allowed prefix
+- `FORBIDDEN_WORKSPACE` — `workspaceRoot` names anything other than the caller's own workspace
 - `<TOOL>_OP_FAILED` — underlying tool returned non-zero (e.g. `NPM_OP_FAILED`, `GIT_OP_FAILED`)
 - `TIMEOUT` — exceeded `timeoutSeconds`
 - `INTERNAL_ERROR` — system component bug
@@ -288,7 +288,7 @@ The default behavior is **aggressive teardown**. A workflow that crashes mid-ste
 ```
 
 - `container` — must match the `imagePattern` regex on the `managedContainer`'s entry in `managed-containers.json`
-- `sourceClone` — optional. If provided, the test env starts from a ZFS snapshot of this dataset (CoW). If omitted, an empty clone is created
+- `sourceClone` — optional. If provided, the test env starts from a ZFS snapshot of this dataset (CoW). It must be the caller's own tenant dataset (`safebox-pool/tenants/<tenant>`) or the clone of one of the caller's own live tests (`safebox-pool/clones/<test-id>`); any other dataset is rejected with `FORBIDDEN_DATASET`. If omitted, the caller's tenant dataset is used. Each container may have at most `maxConcurrentTestsPerContainer` (default 2, set in `managed-containers.json`) live tests; the next create is rejected with `TEST_LIMIT`
 - `envVars` — optional, ≤ 64 entries. Keys must match `^[A-Z][A-Z0-9_]{0,63}$`, values ≤ 8192 chars and no control characters
 - `command` — optional. If provided, replaces the container's default `CMD`. Array of strings, ≤ 64 elements, each ≤ 4096 chars
 - `keepaliveSeconds` — optional, default 60. Range 30–600. The system component tears down the env if no keepalive arrives within this many seconds
@@ -420,7 +420,7 @@ Installed models live at `/srv/safebox/models/<manifestHash>/`. The directory na
 
 ## managed-containers.json — the allowlist
 
-The system component reads `/etc/safebox/managed-containers.json` at startup and on `SIGHUP`. This file is the single source of truth for what each container can do. Already exists in the Infrastructure repo at `config/managed-containers.json`.
+The system component reads `/var/lib/safebox/managed-containers.json` at startup and on `SIGHUP`. This file is the single source of truth for what each container can do. Already exists in the Infrastructure repo at `config/managed-containers.json`.
 
 ```json
 {
@@ -494,7 +494,7 @@ journalctl -t safebox-system | jq 'select(.tenantHint == "<…>")'
 ```js
 // Safebox Node side (inside a container; both paths are bind-mounted from host)
 
-const secret = fs.readFileSync('/etc/safebox/system.hmac');
+const secret = fs.readFileSync('/run/safebox/keys/system.hmac');
 
 async function callSystem(method, path, body) {
     const bodyStr = body ? JSON.stringify(body) : '';
@@ -565,7 +565,7 @@ async function runTest(spec) {
 1. **A small client module** (`Safebox.Protocol.System.js`) that handles HMAC signing, retries, and the keepalive loop. ~150 lines of Node. The example above is most of it.
 2. **`Safebox.Protocol.System`** — wraps `/system` calls. Maps the existing `Protocol.System` actions (npm, git, dnf, etc.) to `tool` + `action` + `packages` in the JSON envelope.
 3. **`Safebox.Protocol.Test`** — wraps `/test*` calls, keepalive loop, yields polling. Hooks into the orchestrator's existing `Safebox.yield` plumbing so test stdout streams the same way as sandboxed-tool yields.
-4. **Config**: store the HMAC secret at `/etc/safebox/system.hmac` (group `safebox-infra-readers`, mode `0640`) at deployment time. Both Safebox Node and the System component read from there.
+4. **Config**: the HMAC secret is not provisioned by hand. The System component derives it and writes it to `/run/safebox/keys/<name>/system.hmac` on the host (mode `0440`), bind-mounted read-only into the container; Safebox Node reads `/run/safebox/keys/system.hmac`.
 
 ---
 

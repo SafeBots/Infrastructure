@@ -26,12 +26,18 @@ import logging
 import os
 import struct
 import sys
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 import uvicorn
+
+# Import shared HMAC auth
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from safebox_auth import verify_hmac
 
 
 logger = logging.getLogger(__name__)
@@ -110,6 +116,20 @@ class GenerateResponse(BaseModel):
 
 app = FastAPI(title="Stable Audio 3 Runner", version="0.1.0")
 
+
+@app.middleware("http")
+async def hmac_middleware(request: Request, call_next):
+    """Verify HMAC on POST requests using shared safebox_auth."""
+    if request.method == "POST":
+        body = await request.body()
+        if not verify_hmac(request, body):
+            return Response(
+                content=json.dumps({"ok": False, "error": "HMAC verification failed"}),
+                status_code=401,
+                media_type="application/json",
+            )
+    return await call_next(request)
+
 _config: Optional[Config] = None
 _model_dir: Optional[Path] = None
 
@@ -138,10 +158,13 @@ def healthz() -> dict:
     }
 
 
-@app.post("/v1/audio/generate", response_model=GenerateResponse)
-def generate(req: GenerateRequest) -> GenerateResponse:
+@app.post("/v1/audio/generate")
+def generate(req: GenerateRequest, request: Request) -> Response:
     if _config is None or _model_dir is None:
         raise HTTPException(status_code=503, detail="runner not initialized")
+
+    request_id = request.headers.get("X-Safebox-Request-Id", str(uuid.uuid4()))
+    start_time = time.time()
 
     # ── STUB: real inference goes here ──────────────────────────────────────
     # In production, this would:
@@ -162,7 +185,9 @@ def generate(req: GenerateRequest) -> GenerateResponse:
     n_samples = int(req.durationSeconds * sample_rate)
     silent = generate_silent_wav(sample_rate, n_samples)
     import base64
-    return GenerateResponse(
+
+    compute_ms = int((time.time() - start_time) * 1000)
+    body = GenerateResponse(
         sampleRate=sample_rate,
         channels=2,
         durationSeconds=req.durationSeconds,
@@ -171,6 +196,16 @@ def generate(req: GenerateRequest) -> GenerateResponse:
         modelManifestHash=_config.modelManifestHash,
         variant=_config.variant,
     )
+    resp = Response(
+        content=body.model_dump_json(),
+        media_type="application/json",
+    )
+    resp.headers["X-Safebox-Request-Id"] = request_id
+    resp.headers["X-Safebox-Runner-Id"] = "stable-audio-3"
+    resp.headers["X-Safebox-Model-Id"] = f"stable-audio-3/{_config.variant}"
+    resp.headers["X-Safebox-Compute-Ms"] = str(compute_ms)
+    resp.headers["X-Safebox-Capacity-Hint"] = "available"
+    return resp
 
 
 def generate_silent_wav(sample_rate: int, n_samples: int) -> bytes:

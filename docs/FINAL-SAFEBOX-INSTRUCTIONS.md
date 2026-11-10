@@ -358,7 +358,7 @@ $params = array_slice($argv, 3);
 
 // Load default command templates
 $containers = json_decode(
-    file_get_contents('/etc/safebox/managed-containers.json'),
+    file_get_contents('/var/lib/safebox/managed-containers.json'),
     true
 );
 
@@ -509,7 +509,7 @@ php safebox-admin.php nginx update-cloudflare-cert intercoin.example.com
 - [ ] Create `Safebox/handlers/Safebox/system/action/post.php`
 - [ ] Create `Safebox/classes/Safebox/System/PackageManager.php`
 - [ ] Create admin CLI tool `scripts/safebox-admin.php`
-- [ ] Update `/etc/safebox/managed-containers.json` with real commit hashes
+- [ ] Update `/var/lib/safebox/managed-containers.json` with real commit hashes
 - [ ] Test: Clone Qbix Platform
 - [ ] Test: Clone Safebox app
 - [ ] Test: Update Streams plugin

@@ -17,7 +17,7 @@ function check(name, cond, detail) {
 }
 
 const tests = opsTest._tests;
-const testId = 'tst_synthetic_for_test';
+const testId = 'tst-synthetic-for-test';
 tests.set(testId, {
     testId,
     managedContainer: 'safebox-app-foo',
@@ -87,10 +87,10 @@ check('empty identity gets TEST_NOT_FOUND',
     check('non-owner still gets TEST_NOT_FOUND after test stopped',
         r12.status === 'error' && r12.code === 'TEST_NOT_FOUND');
 
-    const r13 = opsTest.handleStatus('tst_does_not_exist', 'safebox-app-foo');
+    const r13 = opsTest.handleStatus('tst-does-not-exist', 'safebox-app-foo');
     check('missing testId: TEST_NOT_FOUND for owner-like identity',
         r13.status === 'error' && r13.code === 'TEST_NOT_FOUND');
-    const r14 = opsTest.handleStatus('tst_does_not_exist', 'safebox-app-bar');
+    const r14 = opsTest.handleStatus('tst-does-not-exist', 'safebox-app-bar');
     check('missing testId: TEST_NOT_FOUND for other identity',
         r14.status === 'error' && r14.code === 'TEST_NOT_FOUND');
 

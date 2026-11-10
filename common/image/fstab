@@ -1,0 +1,29 @@
+# /etc/fstab for the safebox image. Installed by common/image/build-verity-root.sh.
+#
+# Every ZFS dataset in safebox-pool is created with mountpoint=legacy
+# (common/boot/safebox-unseal.sh), so ZFS never mounts it on its own and the
+# entries below are the only thing that does. systemd-fstab-generator turns
+# each line into a real .mount unit (var.mount, var-lib-safebox.mount, ...),
+# which means services can order on a specific dataset with
+# RequiresMountsFor= instead of on "zfs-mount.service" as a whole.
+#
+# x-systemd.requires/after=zfs-import.target: the pool is imported in the
+# initramfs and stays imported across switch-root; ordering on the target
+# just makes the dependency explicit. There is deliberately no "nofail": a
+# safebox whose pool is missing must fail closed, not come up with an empty
+# /var on the volatile overlay.
+#
+# /boot and /boot/efi hold the kernel, GRUB, and the sealed TPM blobs; the
+# booted system only ever reads them. The unseal script remounts /boot rw
+# itself on first boot, in the initramfs, before this file is in effect.
+
+safebox-pool/var      /var                 zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+safebox-pool/safebox  /var/lib/safebox     zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+safebox-pool/docker   /var/lib/docker      zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+safebox-pool/mariadb  /var/lib/mysql       zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+safebox-pool/tenants  /srv/safebox/tenants zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+safebox-pool/clones   /srv/zfs-clones      zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+safebox-pool/models   /srv/safebox/models  zfs   defaults,x-systemd.requires=zfs-import.target,x-systemd.after=zfs-import.target  0 0
+
+PARTLABEL=SAFEBOX-BOOT  /boot      ext4  ro,nosuid,nodev,noexec             0 0
+PARTLABEL=SAFEBOX-ESP   /boot/efi  vfat  ro,nosuid,nodev,noexec,umask=0077  0 0

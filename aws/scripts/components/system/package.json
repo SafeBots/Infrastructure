@@ -12,7 +12,8 @@
         "node": ">=20.0.0"
     },
     "dependencies": {
-        "@huggingface/transformers": "3.3.3"
+        "@huggingface/transformers": "3.3.3",
+        "@noble/post-quantum": "^0.7.1"
     },
     "license": "Apache-2.0"
 }

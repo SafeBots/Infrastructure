@@ -1,0 +1,63 @@
+{
+  "manifestVersion": "1.0",
+  "model": "moonshotai/Kimi-K3.1-Pro",
+  "modelId": "kimi-k3.1-pro",
+  "displayName": "Kimi K3.1 Pro",
+  "runnerType": "vllm",
+  "license": "MIT",
+
+  "hardware": {
+    "minGpus": 8,
+    "gpuModel": "H100-80GB",
+    "minVramPerGpu": 81920,
+    "minRamMb": 262144,
+    "diskGb": 600
+  },
+
+  "inference": {
+    "architecture": "MoE",
+    "parameters": "2.8T total / 104B active",
+    "attention": "MLA (Multi-Latent Attention)",
+    "contextLength": 1048576,
+    "kvBytesPerToken": null,
+    "quantization": null,
+    "dtype": "bf16",
+    "tensorParallel": 8
+  },
+
+  "vllm": {
+    "modelArgs": {
+      "trust_remote_code": true,
+      "tensor_parallel_size": 8,
+      "max_model_len": 131072,
+      "enable_prefix_caching": true,
+      "gpu_memory_utilization": 0.92,
+      "enforce_eager": false
+    },
+    "engineArgs": {
+      "enable_chunked_prefill": true,
+      "max_num_batched_tokens": 65536
+    }
+  },
+
+  "protocols": {
+    "chat": true,
+    "complete": true,
+    "embed": false
+  },
+
+  "cost": {
+    "safebux": 2.0,
+    "unit": "request"
+  },
+
+  "weights": {
+    "files": [
+      "model-00001-of-00163.safetensors",
+      "model-00163-of-00163.safetensors"
+    ],
+    "totalSizeGb": 560,
+    "format": "safetensors",
+    "sha256": "PLACEHOLDER — real hash set by M-of-N governance signing"
+  }
+}

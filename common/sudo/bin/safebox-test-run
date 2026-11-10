@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by a tenant instance. Starts a test
+# container on a ZFS clone. The clone must belong to the calling tenant
+# (safebox:tenant property set by safebox-zfs clone; caller from SUDO_UID,
+# see safebox-caller.sh), and the container is labelled with that tenant so
+# safebox-test-stop and safebox-test-logs can check it back. This script is an argument validator: it accepts
+# exactly three positional inputs, checks each against a fixed regex, and
+# builds the whole docker argv itself. No input reaches docker as a flag.
+#
+#   argv[1] test-id     ^[a-z0-9-]{1,40}$
+#   argv[2] image-ref   ^safebox-app-[a-z0-9-]+:[a-z0-9.-]+$
+#   argv[3] clone-path  must equal /srv/zfs-clones/<test-id> exactly
+#
+# Any argument beginning with "-" is rejected before the regexes run so that
+# nothing can be smuggled in as an option. See docs/HARDENING-PLAN.md fix 5.
+#
+# User namespaces. The daemon runs with userns-remap=default and this wrapper
+# never passes --userns=host (see safebox-container for why). Container
+# uid/gid 991 is host <base>+991, <base> being the dockremap range in
+# /etc/subuid and /etc/subgid, so the clone is chown -R'd to that id before
+# `docker run`. The clone is a throwaway copy of the tenant workspace: no
+# socket, and nothing on the host needs to write into it afterwards.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+die() { printf 'safebox-test-run: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+
+readonly APP_UID=991
+mapped_id() {
+    local file=$1 base count
+    IFS=: read -r _ base count < <(grep -m1 '^dockremap:' "$file" || true)
+    [[ ${base:-} =~ ^[0-9]+$ && ${count:-} =~ ^[0-9]+$ ]] \
+        || die "no dockremap range in $file; userns-remap is required"
+    (( count > APP_UID )) || die "dockremap range in $file does not cover uid $APP_UID"
+    printf '%d' $(( base + APP_UID ))
+}
+
+[[ $# -eq 3 ]] || die "usage: safebox-test-run <test-id> <image-ref> <clone-path>"
+for a in "$@"; do
+    [[ $a == -* ]] && die "argument may not start with '-'"
+done
+
+test_id=$1 image_ref=$2 clone_path=$3
+[[ $test_id =~ ^[a-z0-9-]{1,40}$ ]] || die "invalid test-id"
+[[ $image_ref =~ ^safebox-app-[a-z0-9-]+:[a-z0-9.-]+$ ]] || die "invalid image-ref"
+[[ $clone_path == "/srv/zfs-clones/$test_id" ]] || die "clone-path must be /srv/zfs-clones/$test_id"
+# The clone must already be mounted by safebox-zfs clone; docker would
+# otherwise create an empty root-owned directory on the parent dataset.
+[[ -d $clone_path ]] || die "clone-path is not a directory"
+mountpoint -q "$clone_path" || die "clone-path is not a mountpoint"
+tenant=$(caller_tenant)
+dataset_owned_by "safebox-pool/clones/$test_id" "$tenant" \
+    || die "clone safebox-pool/clones/$test_id does not belong to tenant '$tenant'"
+
+# Map the clone's ownership to the user namespace (see header).
+muid=$(mapped_id /etc/subuid)
+mgid=$(mapped_id /etc/subgid)
+chown -R --no-dereference "$muid:$mgid" -- "$clone_path"
+
+exec docker run --detach \
+    --name "safebox-test-$test_id" \
+    --label "safebox.testId=$test_id" \
+    --label "safebox.tenant=$tenant" \
+    --network none \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --pids-limit 256 \
+    --memory 2g \
+    --tmpfs /tmp \
+    -v "$clone_path:/workspace:rw" \
+    "$image_ref"

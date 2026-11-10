@@ -1,0 +1,16 @@
+[Unit]
+Description=Safebox inner egress deny-all (two-box architecture)
+Documentation=file:///opt/safebox/net/safebox-inner-egress.nft
+After=safebox-nftables.service docker.service
+Requires=safebox-nftables.service
+# Only run on inner Safeboxes — those deployed with a paired outer Console.
+# The console-ip file is written by safebox-firstboot from metadata.
+ConditionPathExists=/etc/safebox/console-ip
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/safebox/net/safebox-inner-egress.sh
+
+[Install]
+WantedBy=multi-user.target

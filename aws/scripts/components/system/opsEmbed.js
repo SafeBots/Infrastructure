@@ -24,6 +24,7 @@ const path     = require('path');
 
 const config = require('./config');
 
+const REMOTE_INFERENCE_TIMEOUT_MS = parseInt(process.env.REMOTE_INFERENCE_TIMEOUT_MS || '60000', 10);
 const WORKER_SCRIPT = path.join(__dirname, 'embeddingsWorker.js');
 const REQUEST_TIMEOUT_MS = parseInt(process.env.EMBEDDINGS_REQUEST_TIMEOUT_MS || '120000', 10);
 const RESPAWN_BACKOFF_MS = 2000;
@@ -36,6 +37,10 @@ const RESPAWN_BACKOFF_MS = 2000;
 let worker       = null;
 let respawnTimer = null;
 let shuttingDown = false;
+
+// SafenetNode reference for remote inference routing.
+// Set via setSafenetNode() when the Safenet subsystem starts.
+let safenetNode = null;
 
 // In-flight requests: requestId -> { resolve, reject, timeoutHandle }
 const pending = new Map();
@@ -184,6 +189,11 @@ async function handleEmbed(body) {
         });
         return { status: 'ok', data };
     } catch (e) {
+        // If the model isn't installed locally, try remote inference
+        if (e.code === 'MODEL_NOT_INSTALLED' && !config.disableRemoteInference && safenetNode) {
+            return await _tryRemoteInference(body);
+        }
+
         const httpStatus = (e.code === 'EMBEDDINGS_TIMEOUT')                  ? 504 :
                            (e.code === 'EMBEDDINGS_WORKER_RESTART')           ? 503 :
                            (e.code === 'EMBEDDINGS_WORKER_UNAVAILABLE')       ? 503 :
@@ -194,6 +204,127 @@ async function handleEmbed(body) {
         return { status: 'error', code: e.code || 'INTERNAL_ERROR',
                  message: e.message, _http: httpStatus };
     }
+}
+
+/**
+ * Attempt to route an inference request to a remote attested Safenet peer.
+ *
+ * Looks up peers by manifest hash (64-char hex model identifier) or by
+ * model name.  Tries up to 2 peers before giving up.
+ *
+ * @param {object} body - Original request body
+ * @returns {Promise<object>} Response object with status, data, and _http
+ * @private
+ */
+async function _tryRemoteInference(body) {
+    const model = body.model;
+    if (!model) {
+        return { status: 'error', code: 'MODEL_NOT_INSTALLED',
+                 message: 'No model specified', _http: 404 };
+    }
+
+    // Find peers: by manifest hash if it looks like one, otherwise by name
+    let peers;
+    if (/^[0-9a-f]{64}$/.test(model)) {
+        peers = safenetNode.findModelPeers(model);
+    } else {
+        peers = safenetNode.findModelPeersByName(model);
+    }
+
+    if (!peers || peers.length === 0) {
+        audit({ event: 'remote_inference_no_peers', model });
+        return { status: 'error', code: 'MODEL_UNAVAILABLE',
+                 message: 'No attested peer has model: ' + model, _http: 503 };
+    }
+
+    // Try up to 2 peers (shuffle for load distribution)
+    const shuffled = peers.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
+    }
+    const attempts = Math.min(shuffled.length, 2);
+
+    for (let i = 0; i < attempts; i++) {
+        const peer = shuffled[i];
+        try {
+            audit({ event: 'remote_inference_attempt', model, peer: peer.endpoint, attempt: i + 1 });
+            const result = await _postJSONWithTimeout(peer.endpoint + '/embed', {
+                model:     body.model,
+                task:      body.task,
+                inputs:    body.inputs,
+                pooling:   body.pooling,
+                normalize: body.normalize,
+                // Do NOT forward managedContainer — the remote peer uses its own auth
+            }, REMOTE_INFERENCE_TIMEOUT_MS);
+
+            if (result && result.status === 'ok') {
+                audit({ event: 'remote_inference_ok', model, peer: peer.endpoint });
+                return { status: 'ok', data: result.data, _remote: peer.endpoint };
+            }
+            // Peer returned an error — try next
+            audit({ event: 'remote_inference_peer_error', model, peer: peer.endpoint,
+                    code: result && result.code, message: result && result.message });
+        } catch (err) {
+            audit({ event: 'remote_inference_peer_fail', model, peer: peer.endpoint,
+                    message: err.message });
+        }
+    }
+
+    return { status: 'error', code: 'REMOTE_INFERENCE_FAILED',
+             message: 'All remote peers failed for model: ' + model, _http: 502 };
+}
+
+/**
+ * POST JSON to a peer with a timeout.
+ *
+ * Uses Node.js https (TEE-to-TEE, attestation replaces TLS PKI).
+ *
+ * @param {string} urlStr
+ * @param {object} body
+ * @param {number} timeoutMs
+ * @returns {Promise<object>}
+ * @private
+ */
+function _postJSONWithTimeout(urlStr, body, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const https = require('https');
+        const parsed = new URL(urlStr);
+        const payload = JSON.stringify(body);
+
+        const options = {
+            hostname: parsed.hostname,
+            port: parsed.port || 443,
+            path: parsed.pathname + parsed.search,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            },
+            rejectUnauthorized: false, // TEE-to-TEE: attestation replaces TLS PKI
+            timeout: timeoutMs
+        };
+
+        const req = https.request(options, (res) => {
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                } catch (_) {
+                    reject(new Error('Invalid JSON from remote peer'));
+                }
+            });
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Remote inference request timed out'));
+        });
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
 }
 
 async function handleUnload(body) {
@@ -263,11 +394,23 @@ async function handle(method, pathname, body) {
              message: 'no such /embed endpoint', _http: 404 };
 }
 
+/**
+ * Set the SafenetNode reference for remote inference routing.
+ * Called once when the Safenet subsystem initializes.
+ *
+ * @param {import('../safenet/lib/SafenetNode')} node
+ */
+function setSafenetNode(node) {
+    safenetNode = node;
+}
+
 module.exports = {
     handle,
     startWorker,
     shutdownWorker,
+    setSafenetNode,
     // exposed for tests
     _pending: pending,
     _isWorkerRunning: () => worker !== null,
+    _getSafenetNode: () => safenetNode,
 };

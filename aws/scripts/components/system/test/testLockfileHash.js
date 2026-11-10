@@ -1,7 +1,7 @@
 // test/testLockfileHash.js
 //
 // Tests the lockfile-hash verification path. The real implementation
-// shells out to `sudo docker exec ... cat <lockfile>` and compares the
+// shells out to `sudo safebox-container exec <name> git show :<lockfile>` and compares the
 // SHA-256 against req.lockfileHash. We mock execFile to return
 // predictable bytes and verify the hash matching, mismatch handling,
 // and error paths.
@@ -43,18 +43,18 @@ async function run() {
     mockBehavior = (bin, argv) => {
         // Verify we're calling the right binary with the right shape
         if (bin !== '/usr/bin/sudo') return { err: new Error('expected sudo'), stdout: '', stderr: 'wrong bin' };
-        if (argv[0] !== '/usr/bin/docker' || argv[1] !== 'exec') {
-            return { err: new Error('expected docker exec'), stdout: '', stderr: 'wrong argv' };
+        if (argv[0] !== '-n' || argv[1] !== '/opt/safebox/bin/safebox-container' || argv[2] !== 'exec') {
+            return { err: new Error('expected safebox-container exec'), stdout: '', stderr: 'wrong argv' };
         }
-        // Confirm --user, --workdir, then container name, then cat
-        if (argv[2] !== '--user' || argv[4] !== '--workdir' || argv[7] !== '/usr/bin/cat') {
+        // Confirm wrapper name, then git show :<lockfile>
+        if (argv[3] !== 'foo' || argv[4] !== 'git' || argv[5] !== 'show') {
             return { err: new Error('argv shape wrong'), stdout: '', stderr: 'shape' };
         }
         return { err: null, stdout: goodLockfile, stderr: '' };
     };
 
     const entry = { containerName: 'safebox-app-foo', runUser: 'safebox-app' };
-    const req1 = { tool: 'npm', _containerWorkdir: '/app', lockfileHash: goodHash };
+    const req1 = { tool: 'npm', _containerWorkdir: '/workspace', lockfileHash: goodHash };
     const r1 = await ops._verifyLockfileHash(entry, req1);
     check('happy path: matching hash returns null',
         r1 === null,
@@ -100,21 +100,21 @@ async function run() {
         capturedArgv = { bin, argv: [...argv] };
         return { err: null, stdout: goodLockfile, stderr: '' };
     };
-    const req5 = { tool: 'npm', _containerWorkdir: '/srv/app/sub', lockfileHash: goodHash };
-    const entry5 = { containerName: 'my-container', runUser: 'my-user' };
+    const req5 = { tool: 'npm', _containerWorkdir: '/workspace', lockfileHash: goodHash };
+    const entry5 = { containerName: 'safebox-app-my-container', runUser: 'safebox-app' };
     await ops._verifyLockfileHash(entry5, req5);
 
-    check('argv includes correct user',
-        capturedArgv.argv[3] === 'my-user',
+    check('argv goes through the wrapper',
+        capturedArgv.argv[1] === '/opt/safebox/bin/safebox-container' && capturedArgv.argv[2] === 'exec',
+        'argv=' + capturedArgv.argv.join(' '));
+    check('argv names the container without the safebox-app- prefix',
+        capturedArgv.argv[3] === 'my-container',
         'argv[3]=' + capturedArgv.argv[3]);
-    check('argv includes correct workdir',
-        capturedArgv.argv[5] === '/srv/app/sub',
-        'argv[5]=' + capturedArgv.argv[5]);
-    check('argv includes correct container',
-        capturedArgv.argv[6] === 'my-container',
-        'argv[6]=' + capturedArgv.argv[6]);
-    check('argv ends with full lockfile path',
-        capturedArgv.argv[capturedArgv.argv.length - 1] === '/srv/app/sub/package-lock.json',
+    check('argv reads the lockfile with git show',
+        capturedArgv.argv[4] === 'git' && capturedArgv.argv[5] === 'show',
+        'argv[4..5]=' + capturedArgv.argv.slice(4, 6).join(' '));
+    check('argv ends with the index path of the lockfile',
+        capturedArgv.argv[capturedArgv.argv.length - 1] === ':package-lock.json',
         'last arg=' + capturedArgv.argv[capturedArgv.argv.length - 1]);
 
     // Restore

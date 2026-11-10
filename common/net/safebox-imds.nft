@@ -1,0 +1,111 @@
+#!/usr/sbin/nft -f
+# safebox-imds.nft - host firewall: inbound policy and metadata-service
+# access policy, in one table so a single `nft -f` replaces both atomically.
+#
+# INPUT (policy drop): the host accepts only loopback, replies to its own
+# connections, a few ICMP types, TCP 53/80/443/8443, and DHCP replies.
+# Inbound TCP SYNs carrying IPv4 header options are dropped before any port
+# accept (CVE-2026-98432 mitigation; see the inline comment). Port 80
+# is accepted at the host because nginx binds it for ACME HTTP-01 and the
+# splash page; whether the internet can reach it is decided by the cloud
+# firewall (the Terraform `allow_http` variable), not here. 8443 is
+# dnsclient's challenge listener. Container traffic never enters this chain
+# (it goes through FORWARD, which Docker owns), and the host has no sshd,
+# so there is nothing else to open.
+#
+# OUTPUT (policy accept, metadata only):
+# HARDENING-PLAN.md fix 6: the metadata address is reachable only by root
+# (uid 0, the firstboot unit), safebox-infra (uid 990, the system component)
+# and safebox-dns (uid 992, dnsclient: public IP discovery and, on OCI, the
+# platform certificate). Every other local process, including anything that gets
+# code execution as nginx, mysql, or a stray service account, is dropped.
+#
+# Container traffic is handled separately in safebox-imds.sh through the
+# DOCKER-USER chain, because Docker owns the FORWARD path and this table
+# must not fight it. This file is loaded by safebox-imds.sh with `nft -f`;
+# the flush at the top makes it idempotent.
+#
+# 169.254.169.254 is the metadata address on AWS, GCP, Azure and OCI alike.
+# fd00:ec2::254 is the AWS IPv6 IMDS endpoint. GCP's metadata.google.internal
+# resolves to the same IPv4 address, so no extra rule is needed for it.
+#
+# The one exception: on GCP and OCI the same address is also the NTP server
+# (AWS uses 169.254.169.123 and Azure a PTP refclock, so neither is
+# affected). chronyd runs as _chrony, so it gets one accept limited to UDP
+# port 123. The metadata HTTP service is on TCP 80; UDP 123 cannot reach it.
+# The uid is given by name and resolved when the file is loaded; the base
+# installer checks that the user exists.
+
+table inet safebox
+flush table inet safebox
+
+table inet safebox {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        iif "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+
+        # CVE-2026-98432: drop inbound TCP SYNs that carry IPv4 options.
+        # The kernel's TCP handshake has a use-after-free when IPv4 header
+        # options are present on the connecting socket: it passes the option
+        # block to the new connection without copying, then frees it while
+        # another CPU may still read it. Dropping SYNs with options at the
+        # firewall prevents the vulnerable code path from being reached.
+        # Legitimate TCP uses no IPv4 header options in practice (timestamps,
+        # window scaling and SACK are TCP-layer options inside the TCP header,
+        # not IP-layer options, so this rule does not touch them). The rule
+        # matches only SYN (not SYN+ACK) to avoid breaking replies to our
+        # own outbound connections, which conntrack accepts above. gVisor
+        # containers are already protected (their traffic uses netstack, not
+        # the host kernel), so this covers only the host's own listeners.
+        ip protocol tcp ip hdrlength > 5 tcp flags & (fin|syn|rst|ack) == syn drop
+
+        # Path MTU discovery, reachability, traceroute replies, ping.
+        ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
+        # IPv6 needs NDP (router/neighbour solicitation and advertisement)
+        # to function at all, so ICMPv6 is accepted as a class.
+        meta l4proto ipv6-icmp accept
+
+        # nginx (80, 443) and dnsclient's challenge listener (8443). See the
+        # header comment for why 80 is open here regardless of allow_http.
+        tcp dport { 80, 443, 8443 } accept
+
+        # DNS: port 53 TCP+UDP. Only meaningful on nameserver-role boxes;
+        # the knot service ConditionPathExists guard ensures the daemon
+        # won't start on non-nameserver boxes even though the port is open.
+        # Opening unconditionally avoids needing a reload of the firewall
+        # when a box is designated as a nameserver.
+        tcp dport 53 accept
+        udp dport 53 accept
+
+        # DHCP replies. GCE, Azure and OCI hand out the primary address with
+        # DHCP; the offer/ack can arrive as a broadcast that conntrack does
+        # not associate with the client's discover, so match it explicitly.
+        meta l4proto udp udp sport 67 udp dport 68 accept
+
+        counter drop
+    }
+
+    # No forward chain here on purpose: Docker owns the FORWARD path and
+    # the container-to-metadata DROP lives in its DOCKER-USER chain
+    # (installed by safebox-imds.sh).
+
+    chain output {
+        # Priority filter (0), policy accept: this chain only decides about
+        # metadata-bound packets and leaves everything else alone.
+        type filter hook output priority filter; policy accept;
+
+        ip daddr 169.254.169.254 meta skuid 0 accept
+        ip daddr 169.254.169.254 meta skuid 990 accept
+        ip daddr 169.254.169.254 meta skuid 992 accept
+        ip daddr 169.254.169.254 udp dport 123 meta skuid "_chrony" accept
+        ip daddr 169.254.169.254 counter drop
+
+        ip6 daddr fd00:ec2::254 meta skuid 0 accept
+        ip6 daddr fd00:ec2::254 meta skuid 990 accept
+        ip6 daddr fd00:ec2::254 meta skuid 992 accept
+        ip6 daddr fd00:ec2::254 counter drop
+    }
+}

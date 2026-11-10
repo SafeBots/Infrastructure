@@ -1,0 +1,1083 @@
+<title>Safebox Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --red: #D16362; --yellow: #B0A533; --blue: #4785CA; --green: #4BB735;
+  --red-soft: #DA6462; --yellow-soft: #DAD062; --blue-soft: #629BDA; --green-soft: #77DA62;
+  --bg-0: #111113; --bg-1: #18181b; --bg-2: #1e1e22; --bg-3: #262629;
+  --bg-hover: #2a2a2e; --bg-active: #1c2636;
+  --border: #333338; --border-subtle: #28282d;
+  --text-0: #fff; --text-1: #e6e9ef; --text-2: #b9bfca; --text-3: #8d939f;
+  --nav-w: 224px; --list-w: 340px;
+  --radius: 10px; --radius-sm: 6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg-0);color:var(--text-1);
+  font:14px/1.55 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+html{overflow-x:hidden;max-width:100vw}
+
+/* ── Layout ── */
+.app{display:grid;grid-template-columns:var(--nav-w) var(--list-w) 1fr;height:100vh;height:100dvh}
+.col{display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.nav-col{background:var(--bg-1);border-right:1px solid var(--border)}
+.list-col{background:var(--bg-2);border-right:1px solid var(--border)}
+.detail-col{background:var(--bg-0)}
+
+/* ── Scrollable areas ── */
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+.scroll::-webkit-scrollbar{width:5px}
+.scroll::-webkit-scrollbar-track{background:transparent}
+.scroll::-webkit-scrollbar-thumb{background:#444;border-radius:3px}
+
+/* ── Nav ── */
+.nav-header{padding:20px 18px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.nav-brand{font-weight:800;font-size:16px;color:var(--text-0);letter-spacing:-.02em}
+.nav-brand small{font-weight:500;font-size:12px;color:var(--text-3);margin-left:4px;letter-spacing:0}
+.nav-section{padding:14px 10px 6px}
+.nav-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--text-3);padding:0 8px 8px;user-select:none}
+.nav-item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;cursor:pointer;
+  color:var(--text-2);font-size:13px;font-weight:500;transition:background .12s,color .12s;user-select:none}
+.nav-item:hover{background:var(--bg-hover);color:var(--text-1)}
+.nav-item.active{background:var(--bg-active);color:var(--text-0)}
+.nav-item .emoji{font-size:15px;width:22px;text-align:center;flex-shrink:0}
+.nav-item .badge{margin-left:auto;font-size:10px;font-weight:600;background:var(--bg-3);
+  color:var(--text-3);padding:1px 6px;border-radius:9px;min-width:18px;text-align:center}
+.nav-item.active .badge{background:rgba(71,133,202,.25);color:var(--blue)}
+.nav-footer{margin-top:auto;padding:12px 14px;border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-3)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+
+/* ── List ── */
+.list-header{padding:16px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;min-height:52px}
+.list-header h2{font-size:15px;font-weight:700;color:var(--text-0);flex:1}
+.list-count{font-size:11px;color:var(--text-3);font-weight:500}
+.list-item{padding:12px 18px;border-bottom:1px solid var(--border-subtle);cursor:pointer;
+  transition:background .1s;position:relative}
+.list-item:hover{background:var(--bg-hover)}
+.list-item.active{background:var(--bg-active);border-left:3px solid var(--blue);padding-left:15px}
+.list-title{font-size:13px;font-weight:600;color:var(--text-0);margin-bottom:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-sub{font-size:11.5px;color:var(--text-3);font-family:'JetBrains Mono',monospace;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:11px;color:var(--text-3)}
+.list-meta .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot-green{background:var(--green)}.dot-yellow{background:var(--yellow)}.dot-red{background:var(--red)}.dot-blue{background:var(--blue)}
+.list-badge{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;
+  text-transform:uppercase;letter-spacing:.03em}
+.badge-ok{background:rgba(75,183,53,.15);color:var(--green)}
+.badge-warn{background:rgba(176,165,51,.15);color:var(--yellow)}
+.badge-err{background:rgba(209,99,98,.15);color:var(--red)}
+.badge-info{background:rgba(71,133,202,.15);color:var(--blue)}
+
+/* ── Detail ── */
+.detail-header{padding:16px 20px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;min-height:52px}
+.detail-header h2{font-size:15px;font-weight:700;color:var(--text-0);flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.detail-body{padding:20px}
+.detail-empty{display:flex;align-items:center;justify-content:center;height:100%;
+  color:var(--text-3);font-size:13px;flex-direction:column;gap:8px}
+
+.card{background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:14px}
+.card-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-3);margin-bottom:8px}
+.card h3{font-size:14px;font-weight:700;color:var(--text-0);margin-bottom:4px}
+.card p{font-size:12.5px;color:var(--text-2);line-height:1.5}
+
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12.5px}
+.kv dt{color:var(--text-3);font-weight:500;white-space:nowrap}
+.kv dd{color:var(--text-1);overflow:hidden;text-overflow:ellipsis;word-break:break-all}
+.kv dd.mono{font-family:'JetBrains Mono',monospace;font-size:11.5px}
+
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;font-weight:600;color:var(--text-3);padding:6px 10px 6px 0;
+  border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.data-table td{padding:7px 10px 7px 0;border-bottom:1px solid var(--border-subtle);color:var(--text-1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.data-table td.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+.data-table tr:last-child td{border-bottom:none}
+
+pre.code{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:12px 14px;overflow-x:auto;font:11.5px/1.6 'JetBrains Mono',monospace;color:#a9d9c8;
+  margin:8px 0;white-space:pre;-webkit-overflow-scrolling:touch}
+
+.quorum-bar{height:8px;background:var(--bg-1);border-radius:4px;overflow:hidden;margin:8px 0}
+.quorum-fill{height:100%;border-radius:4px;transition:width .3s}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:var(--radius-sm);
+  border:1px solid var(--border);background:var(--bg-3);color:var(--text-1);font-size:12px;
+  font-weight:600;cursor:pointer;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--bg-hover);border-color:#555}
+.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn-primary:hover{background:#5a94d4}
+
+.verified{color:var(--green);font-weight:600}
+.unverified{color:var(--red);font-weight:600}
+
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-3);margin:18px 0 8px}
+.section-title:first-child{margin-top:0}
+
+/* ── Close button (mobile) ── */
+.close-btn{display:none;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg-3);color:var(--text-2);font-size:16px;cursor:pointer;
+  align-items:center;justify-content:center;flex-shrink:0;line-height:1}
+.close-btn:hover{background:var(--bg-hover);color:var(--text-0)}
+
+/* ── Nav collapse toggle ── */
+.nav-toggle{width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg-3);color:var(--text-2);font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  margin-left:auto;transition:background .12s,transform .2s;line-height:1}
+.nav-toggle:hover{background:var(--bg-hover);color:var(--text-0)}
+.nav-col.collapsed .nav-toggle{transform:rotate(180deg)}
+.nav-col.collapsed{--nav-w:60px}
+.nav-col.collapsed .nav-brand,
+.nav-col.collapsed .nav-section-label,
+.nav-col.collapsed .nav-item span:not(.emoji),
+.nav-col.collapsed .nav-item .badge,
+.nav-col.collapsed .nav-footer span{display:none}
+.nav-col.collapsed .nav-header{justify-content:center;padding:16px 8px}
+.nav-col.collapsed .nav-item{justify-content:center;padding:8px}
+.nav-col.collapsed .nav-footer{justify-content:center}
+.nav-col.collapsed .nav-toggle{margin:0}
+
+/* ── Loading / error states ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:32px;color:var(--text-3);font-size:13px;gap:8px}
+.loading::before{content:'';width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--blue);
+  border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fetch-error{padding:16px 18px;color:var(--red);font-size:12px}
+.fetch-error .retry{color:var(--blue);cursor:pointer;text-decoration:underline;margin-left:6px}
+
+/* ── Responsive ── */
+@media(max-width:1024px){
+  :root{--list-w:300px}
+}
+@media(max-width:768px){
+  .app{grid-template-columns:1fr;position:relative}
+  :root{--nav-w:100%;--list-w:100%}
+  .nav-col.collapsed{--nav-w:100%}
+  .nav-toggle{display:none}
+  .nav-brand,.nav-section-label,.nav-item span:not(.emoji),.nav-item .badge,.nav-footer span{display:flex!important}
+  .nav-item{justify-content:flex-start!important}
+  .nav-header{justify-content:flex-start!important}
+  .nav-footer{justify-content:flex-start!important}
+  .col{position:absolute;inset:0;transition:transform .25s cubic-bezier(.4,0,.2,1)}
+  .nav-col{z-index:1;transform:translateX(0)}
+  .list-col{z-index:2;transform:translateX(100%)}
+  .list-col.open{transform:translateX(0)}
+  .detail-col{z-index:3;transform:translateX(100%)}
+  .detail-col.open{transform:translateX(0)}
+  .close-btn{display:flex}
+}
+
+/* ── Stat grid ── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.stat-card{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px}
+.stat-val{font-size:22px;font-weight:800;color:var(--text-0);letter-spacing:-.02em;line-height:1.1}
+.stat-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin-top:4px}
+
+/* ── Mini bar chart ── */
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px}
+.bar-label{width:80px;color:var(--text-3);text-align:right;flex-shrink:0;font-size:11px}
+.bar-track{flex:1;height:14px;background:var(--bg-1);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.bar-val{width:40px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-2)}
+
+/* ── Connection indicator ── */
+.conn-indicator{display:inline-flex;align-items:center;gap:4px;font-size:10px;margin-left:auto;
+  padding:2px 8px;border-radius:9px;font-weight:600}
+.conn-live{background:rgba(75,183,53,.15);color:var(--green)}
+.conn-err{background:rgba(209,99,98,.15);color:var(--red)}
+</style>
+
+<div class="app">
+  <!-- Nav Column -->
+  <div class="col nav-col" id="navCol">
+    <div class="nav-header">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24" role="img" aria-label="Safebox">
+        <path fill="#D16362" d="M16 2 4 8.6v6.2L16 8.2z"/>
+        <path fill="#B0A533" d="M16 8.2 28 14.8V8.6L16 2z"/>
+        <path fill="#4785CA" d="M4 16.4v7.2L15 30v-7.2z"/>
+        <path fill="#4BB735" d="M17 22.8V30l11-6.4v-7.2z"/>
+      </svg>
+      <span class="nav-brand">Safebox<small>v0.2</small></span>
+      <button class="nav-toggle" onclick="toggleNav()" title="Collapse navigation">‹</button>
+    </div>
+    <div class="scroll" id="navItems"></div>
+    <div class="nav-footer">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Connecting…</span>
+    </div>
+  </div>
+
+  <!-- List Column -->
+  <div class="col list-col" id="listCol">
+    <div class="list-header">
+      <h2 id="listTitle">Select a section</h2>
+      <span class="list-count" id="listCount"></span>
+      <button class="close-btn" onclick="closeList()">&times;</button>
+    </div>
+    <div class="scroll" id="listItems"></div>
+  </div>
+
+  <!-- Detail Column -->
+  <div class="col detail-col" id="detailCol">
+    <div class="detail-header" id="detailHeader" hidden>
+      <h2 id="detailTitle"></h2>
+      <button class="close-btn" onclick="closeDetail()">&times;</button>
+    </div>
+    <div class="scroll" id="detailBody">
+      <div class="detail-empty" id="detailEmpty">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="40" height="40" style="opacity:.2">
+          <path fill="currentColor" d="M16 2 4 8.6v6.2L16 8.2z"/>
+          <path fill="currentColor" d="M16 8.2 28 14.8V8.6L16 2z"/>
+          <path fill="currentColor" d="M4 16.4v7.2L15 30v-7.2z"/>
+          <path fill="currentColor" d="M17 22.8V30l11-6.4v-7.2z"/>
+        </svg>
+        Select an item to inspect
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// Safebox Console v0.2 — Live API Client
+// ══════════════════════════════════════════════════════════════
+
+// ── Configuration ──
+// Auto-detect API base: same origin when served by the node,
+// or configurable via data attribute / global
+const API_BASE = document.documentElement.dataset.apiBase
+  || window.SAFENET_API_BASE
+  || '';  // same origin
+const POLL_INTERVAL = 15000; // 15s refresh cycle
+
+// ── Tab and section definitions ──
+const SECTIONS = [
+  { id:'safenet', label:'SAFENET', tabs:[
+    { id:'peers',    icon:'🌐', label:'Peers',    endpoint:'/safenet/v1/peers',                  mapItems: d => d.peers },
+    { id:'registry', icon:'📦', label:'Registry', endpoint:'/safenet/v1/registry/search?q=&limit=50', mapItems: d => d.results },
+    { id:'claims',   icon:'📜', label:'Claims',   endpoint:'/safenet/v1/transparency/root',       mapItems: null },
+    { id:'identity', icon:'👤', label:'Identity', endpoint:'/healthz',                            mapItems: null },
+    { id:'payments', icon:'💰', label:'Payments', endpoint: null,                                 mapItems: null },
+    { id:'log',      icon:'📋', label:'Log',      endpoint:'/safenet/v1/transparency/root',       mapItems: null },
+    { id:'git',      icon:'📡', label:'Git',      endpoint: null,                                 mapItems: null },
+  ]},
+  { id:'infra', label:'INFRASTRUCTURE', tabs:[
+    { id:'system',     icon:'🖥️', label:'System',     endpoint:'/system/v1/health',     mapItems: d => d.items },
+    { id:'models',     icon:'✨', label:'Models',      endpoint:'/system/v1/models',     mapItems: d => d.items },
+    { id:'containers', icon:'🐳', label:'Containers',  endpoint:'/system/v1/containers', mapItems: d => d.items },
+    { id:'governance', icon:'🔑', label:'Governance',  endpoint:'/system/v1/governance', mapItems: d => d.items },
+    { id:'cache',      icon:'💾', label:'Cache',       endpoint:'/system/v1/cache',      mapItems: d => d.items },
+    { id:'metrics',    icon:'📊', label:'Metrics',     endpoint:'/system/v1/metrics',    mapItems: d => d.items },
+  ]},
+];
+
+// ── State ──
+let activeTab = null, activeItem = null;
+let cachedData = {};     // { tabId: { items: [...], raw: {...}, fetchedAt } }
+let pollTimer = null;
+let nodeHealthy = false;
+
+// ══════════════════════════════════════════════════════════════
+// API fetching
+// ══════════════════════════════════════════════════════════════
+
+async function apiFetch(endpoint) {
+  if (!endpoint) return null;
+  const url = API_BASE + endpoint;
+  const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+/**
+ * Fetch data for a tab, normalize it into the list-item shape
+ * {id, title, sub, dot, meta, badge, badgeText, detail}
+ */
+async function fetchTabData(tabId) {
+  const tabDef = SECTIONS.flatMap(s => s.tabs).find(t => t.id === tabId);
+  if (!tabDef || !tabDef.endpoint) {
+    // Tabs with no endpoint: show what we can derive from other endpoints
+    return fetchDerivedTab(tabId);
+  }
+
+  const data = await apiFetch(tabDef.endpoint);
+  if (!data || !data.ok) throw new Error(data?.message || 'API error');
+
+  let items;
+
+  // Infrastructure tabs all return { items: [...] } with normalized shapes
+  if (tabDef.mapItems) {
+    const rawItems = tabDef.mapItems(data);
+    items = (rawItems || []).map(it => normalizeItem(tabId, it));
+  } else {
+    items = await buildItemsForTab(tabId, data);
+  }
+
+  cachedData[tabId] = { items, raw: data, fetchedAt: Date.now() };
+  return items;
+}
+
+/**
+ * Tabs that need to combine multiple endpoints or derive data.
+ */
+async function fetchDerivedTab(tabId) {
+  let items = [];
+
+  if (tabId === 'payments') {
+    // Payments: fetch our own balance from /safenet/v1/balance/<uri>
+    try {
+      const health = await apiFetch('/healthz');
+      if (health && health.uri) {
+        const bal = await apiFetch('/safenet/v1/balance/' + encodeURIComponent(health.uri));
+        if (bal && bal.ok && bal.balance) {
+          items.push({
+            id: 'balance', title: `${bal.balance.total} SBX`, sub: `Total balance for ${shortUri(health.uri)}`,
+            dot: 'green', meta: `${(bal.balance.payments || []).length} transactions`,
+            detail: bal.balance
+          });
+          (bal.balance.payments || []).forEach((p, i) => {
+            const amt = p.amount || 0;
+            items.push({
+              id: `pay-${i}`, title: `${amt >= 0 ? '+' : ''}${amt} SBX`,
+              sub: p.description || p.type || 'payment',
+              dot: amt >= 0 ? 'green' : 'red',
+              meta: p.timestamp ? timeAgo(p.timestamp) : '',
+              detail: p
+            });
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (tabId === 'git') {
+    // Git: no list endpoint, show registry packages that have repo info
+    try {
+      const reg = await apiFetch('/safenet/v1/registry/search?q=&limit=50');
+      if (reg && reg.ok && reg.results) {
+        items = reg.results
+          .filter(r => r.versions && r.versions.length > 0)
+          .map((r, i) => ({
+            id: `git-${i}`,
+            title: r.namespace ? `@${r.namespace}/${r.name}` : r.name,
+            sub: `${r.versions ? r.versions.length : 0} version(s)`,
+            badge: 'badge-ok', badgeText: 'published',
+            detail: r
+          }));
+      }
+    } catch (_) {}
+  }
+
+  cachedData[tabId] = { items, raw: null, fetchedAt: Date.now() };
+  return items;
+}
+
+/**
+ * Build items for tabs that have an endpoint but no direct mapItems
+ * (claims, identity, log).
+ */
+async function buildItemsForTab(tabId, data) {
+  if (tabId === 'claims' || tabId === 'log') {
+    // data has { root: { rootHash, entryCount } }
+    const root = data.root || {};
+    const count = root.entryCount || 0;
+    const items = [];
+
+    if (tabId === 'log') {
+      // Fetch the last N entries
+      const limit = Math.min(count, 50);
+      for (let i = count - 1; i >= Math.max(0, count - limit); i--) {
+        try {
+          const entry = await apiFetch(`/safenet/v1/transparency/entry/${i}`);
+          if (entry && entry.ok && entry.entry) {
+            const e = entry.entry;
+            const type = (e.claim && e.claim.stm && e.claim.stm.type) || 'entry';
+            items.push({
+              id: `log-${i}`, title: `#${i} ${type}`,
+              sub: `SHA-256: ${shortHash(e.hash || '')}`,
+              meta: e.timestamp ? timeAgo(e.timestamp) : '',
+              detail: e
+            });
+          }
+        } catch (_) { break; } // stop on error
+      }
+    }
+
+    if (tabId === 'claims') {
+      // Similar but group by claim type
+      const limit = Math.min(count, 50);
+      for (let i = count - 1; i >= Math.max(0, count - limit); i--) {
+        try {
+          const entry = await apiFetch(`/safenet/v1/transparency/entry/${i}`);
+          if (entry && entry.ok && entry.entry) {
+            const e = entry.entry;
+            const claim = e.claim || {};
+            const type = (claim.stm && claim.stm.type) || 'unknown';
+            items.push({
+              id: `claim-${i}`, title: type,
+              sub: `iss: ${shortUri(claim.iss || '')} → ${claim.sub || ''}`,
+              meta: e.timestamp ? timeAgo(e.timestamp) : '',
+              badge: 'badge-ok', badgeText: 'verified',
+              detail: claim
+            });
+          }
+        } catch (_) { break; }
+      }
+    }
+
+    return items;
+  }
+
+  if (tabId === 'identity') {
+    // data is the healthz response: { ok, uri, started, timestamp }
+    const items = [{
+      id: 'self', title: 'This Node',
+      sub: shortUri(data.uri || ''),
+      badge: 'badge-ok', badgeText: 'active',
+      detail: { uri: data.uri, started: data.started, timestamp: data.timestamp }
+    }];
+
+    // Also list known peers as identities
+    try {
+      const peersResp = await apiFetch('/safenet/v1/peers');
+      if (peersResp && peersResp.ok) {
+        (peersResp.peers || []).forEach((p, i) => {
+          items.push({
+            id: `id-peer-${i}`, title: p.peerUri ? shortUri(p.peerUri) : `peer-${i}`,
+            sub: `Trust level: ${p.trustLevel || 0}`,
+            badge: p.trustLevel >= 2 ? 'badge-ok' : 'badge-info',
+            badgeText: p.trustLevel >= 2 ? 'full trust' : 'peer trust',
+            detail: p
+          });
+        });
+      }
+    } catch (_) {}
+
+    return items;
+  }
+
+  return [];
+}
+
+/**
+ * Normalize a raw API item into the standard list-item shape.
+ * Infrastructure tabs already return items in the right shape.
+ * Safenet tabs (peers, registry) need mapping.
+ */
+function normalizeItem(tabId, raw) {
+  // Infrastructure tabs: items already have {id, title, sub, dot, meta, badge, badgeText, detail}
+  if (raw.id && raw.title && (raw.sub !== undefined)) {
+    return raw;
+  }
+
+  // Safenet peers
+  if (tabId === 'peers') {
+    return {
+      id: raw.peerUri || raw.endpoint || `peer-${Math.random().toString(36).slice(2,6)}`,
+      title: shortUri(raw.peerUri || raw.endpoint || 'unknown'),
+      sub: shortHash(raw.peerUri || ''),
+      dot: raw.trustLevel >= 2 ? 'green' : raw.trustLevel >= 1 ? 'yellow' : 'red',
+      meta: raw.lastSeen ? timeAgo(raw.lastSeen) : '',
+      detail: raw
+    };
+  }
+
+  // Safenet registry
+  if (tabId === 'registry') {
+    const name = raw.namespace ? `@${raw.namespace}/${raw.name}` : (raw.name || raw.key || 'unknown');
+    const versions = raw.versions || [];
+    return {
+      id: raw.key || name,
+      title: name,
+      sub: `${versions.length > 0 ? versions[versions.length-1] : '0.0.0'} · ${versions.length} version(s)`,
+      badge: 'badge-ok', badgeText: 'published',
+      detail: raw
+    };
+  }
+
+  // Fallback
+  return {
+    id: raw.id || `item-${Math.random().toString(36).slice(2,6)}`,
+    title: raw.title || raw.name || 'Unknown',
+    sub: raw.sub || raw.description || '',
+    detail: raw
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// Detail renderers — adapt to live API data shapes
+// ══════════════════════════════════════════════════════════════
+
+function detailPeers(item) {
+  const d = item.detail || {};
+  return `<div class="section-title">Peer Information</div>
+<div class="card"><dl class="kv">
+  <dt>URI</dt><dd class="mono" style="word-break:break-all">${d.peerUri || item.title}</dd>
+  <dt>Endpoint</dt><dd class="mono">${d.endpoint || '—'}</dd>
+  <dt>Trust Level</dt><dd>${d.trustLevel != null ? d.trustLevel : '—'}</dd>
+  <dt>Last Seen</dt><dd>${d.lastSeen || '—'}</dd>
+  <dt>Connected</dt><dd>${d.connectedSince || '—'}</dd>
+</dl></div>
+<div class="section-title">Sync Status</div>
+<div class="card"><dl class="kv">
+  <dt>Registry</dt><dd>${d.synced ? 'in sync' : 'syncing'}</dd>
+  <dt>Messages In</dt><dd>${d.messagesIn || '—'}</dd>
+  <dt>Messages Out</dt><dd>${d.messagesOut || '—'}</dd>
+</dl></div>`;
+}
+
+function detailRegistry(item) {
+  const d = item.detail || {};
+  const versions = d.versions || [];
+  const versRows = versions.map(v =>
+    `<tr><td>${typeof v === 'string' ? v : v.version || '—'}</td><td class="mono">${typeof v === 'object' && v.hash ? shortHash(v.hash) : '—'}</td></tr>`
+  ).join('');
+  return `<div class="section-title">Package</div>
+<div class="card"><dl class="kv">
+  <dt>Name</dt><dd><strong>${item.title}</strong></dd>
+  <dt>Namespace</dt><dd>${d.namespace || '—'}</dd>
+  <dt>Author</dt><dd class="mono">${d.author ? shortUri(d.author) : '—'}</dd>
+  <dt>License</dt><dd>${d.license || '—'}</dd>
+</dl></div>
+${versions.length > 0 ? `<div class="section-title">Versions</div>
+<div class="card" style="overflow-x:auto"><table class="data-table">
+<thead><tr><th>Version</th><th>Hash</th></tr></thead>
+<tbody>${versRows}</tbody></table></div>` : ''}`;
+}
+
+function detailClaims(item) {
+  const d = item.detail || {};
+  return `<div class="section-title">Claim</div>
+<div class="card"><dl class="kv">
+  <dt>Type</dt><dd><span class="list-badge ${item.badge || 'badge-info'}">${(d.stm && d.stm.type) || item.title}</span></dd>
+  <dt>OCP Version</dt><dd>${d.ocp || '—'}</dd>
+  <dt>Issuer</dt><dd class="mono">${shortUri(d.iss || '')}</dd>
+  <dt>Subject</dt><dd>${d.sub || '—'}</dd>
+  <dt>Not Before</dt><dd>${d.nbf || '—'}</dd>
+</dl></div>
+<div class="section-title">OCP Envelope</div>
+<pre class="code">${JSON.stringify(d, null, 2)}</pre>`;
+}
+
+function detailIdentity(item) {
+  const d = item.detail || {};
+  return `<div class="section-title">Identity</div>
+<div class="card"><dl class="kv">
+  <dt>URI</dt><dd class="mono" style="word-break:break-all">${d.uri || d.peerUri || item.title}</dd>
+  <dt>Trust Level</dt><dd><span class="list-badge ${item.badge || 'badge-info'}">${item.badgeText || '—'}</span></dd>
+  <dt>Started</dt><dd>${d.started || d.connectedSince || '—'}</dd>
+  <dt>Last Active</dt><dd>${d.timestamp || d.lastSeen || '—'}</dd>
+</dl></div>`;
+}
+
+function detailPayments(item) {
+  const d = item.detail || {};
+  if (item.id === 'balance') {
+    return `<div class="section-title">Balance</div>
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-val">${d.total || 0}</div><div class="stat-label">Total SBX</div></div>
+  <div class="stat-card"><div class="stat-val">${(d.payments || []).length}</div><div class="stat-label">Transactions</div></div>
+</div>`;
+  }
+  return `<div class="section-title">Transaction</div>
+<div class="card"><dl class="kv">
+  <dt>Amount</dt><dd style="font-size:18px;font-weight:800;color:${item.dot==='green'?'var(--green)':'var(--red)'}">${item.title}</dd>
+  <dt>Type</dt><dd>${d.type || '—'}</dd>
+  <dt>Description</dt><dd>${d.description || item.sub}</dd>
+  <dt>Timestamp</dt><dd>${d.timestamp || item.meta}</dd>
+</dl></div>
+<pre class="code">${JSON.stringify(d, null, 2)}</pre>`;
+}
+
+function detailLog(item) {
+  const d = item.detail || {};
+  return `<div class="section-title">Log Entry</div>
+<div class="card"><dl class="kv">
+  <dt>Index</dt><dd>${d.index != null ? '#' + d.index : item.title}</dd>
+  <dt>Hash</dt><dd class="mono">${d.hash || '—'}</dd>
+  <dt>Timestamp</dt><dd>${d.timestamp || item.meta}</dd>
+  <dt>Previous</dt><dd class="mono">${d.previousHash ? shortHash(d.previousHash) : '—'}</dd>
+</dl></div>
+${d.claim ? `<div class="section-title">Claim</div>
+<pre class="code">${JSON.stringify(d.claim, null, 2)}</pre>` : ''}`;
+}
+
+function detailGit(item) {
+  const d = item.detail || {};
+  return `<div class="section-title">Repository</div>
+<div class="card"><dl class="kv">
+  <dt>Package</dt><dd><strong>${item.title}</strong></dd>
+  <dt>Namespace</dt><dd>${d.namespace || '—'}</dd>
+  <dt>Versions</dt><dd>${(d.versions || []).length}</dd>
+</dl></div>
+<pre class="code">${JSON.stringify(d, null, 2)}</pre>`;
+}
+
+function detailSystem(item) {
+  const d = item.detail || {};
+  if (item.id === 'node-health') {
+    return `<div class="section-title">Overview</div>
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-val">${d.uptimeFormatted || '—'}</div><div class="stat-label">Uptime</div></div>
+  <div class="stat-card"><div class="stat-val">${d.peerCount || 0}</div><div class="stat-label">Peers</div></div>
+  <div class="stat-card"><div class="stat-val">${d.cpuCount || '—'}</div><div class="stat-label">CPU Cores</div></div>
+  <div class="stat-card"><div class="stat-val">${d.memoryUsePct || 0}%</div><div class="stat-label">Memory</div></div>
+</div>
+<div class="section-title">Node</div>
+<div class="card"><dl class="kv">
+  <dt>Node.js</dt><dd>${d.nodeVersion || '—'}</dd>
+  <dt>Platform</dt><dd>${d.platform || '—'}</dd>
+  <dt>Hostname</dt><dd class="mono">${d.hostname || '—'}</dd>
+  <dt>Architecture</dt><dd>${d.arch || '—'}</dd>
+  <dt>CPU</dt><dd>${d.cpuModel || '—'}</dd>
+  <dt>PID</dt><dd>${d.pid || '—'}</dd>
+  <dt>Started</dt><dd>${d.started || '—'}</dd>
+</dl></div>`;
+  }
+  if (item.id === 'attestation') {
+    return `<div class="section-title">Attestation</div>
+<div class="card"><dl class="kv">
+  <dt>Status</dt><dd>${d.ok ? '<span class="verified">✓ Verified</span>' : '<span class="unverified">✗ Not verified</span>'}</dd>
+  <dt>Method</dt><dd>${d.method || '—'}</dd>
+  <dt>Summary</dt><dd>${d.summary || '—'}</dd>
+</dl></div>`;
+  }
+  if (item.id === 'tls') {
+    return `<div class="section-title">TLS Certificate</div>
+<div class="card"><dl class="kv">
+  <dt>Status</dt><dd>${d.ok ? '<span class="verified">✓ Valid</span>' : '<span class="unverified">✗ Invalid</span>'}</dd>
+  <dt>Summary</dt><dd>${d.summary || '—'}</dd>
+  ${d.daysLeft != null ? `<dt>Days Left</dt><dd>${d.daysLeft}</dd>` : ''}
+  ${d.expiresAt ? `<dt>Expires</dt><dd>${d.expiresAt}</dd>` : ''}
+  <dt>Auto-Renew</dt><dd>${d.autoRenew ? 'Yes' : 'No'}</dd>
+</dl></div>`;
+  }
+  if (item.id === 'disk') {
+    const pct = d.usePct || 0;
+    return `<div class="section-title">Disk</div>
+<div class="card">
+  <div class="bar-row"><span class="bar-label">Used</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${pct<80?'var(--blue)':pct<95?'var(--yellow)':'var(--red)'}"></div></div><span class="bar-val">${pct}%</span></div>
+</div>
+<div class="card"><dl class="kv">
+  <dt>Total</dt><dd>${formatBytes(d.totalBytes || 0)}</dd>
+  <dt>Used</dt><dd>${formatBytes(d.usedBytes || 0)}</dd>
+  <dt>Available</dt><dd>${formatBytes(d.availBytes || 0)}</dd>
+  <dt>Filesystem</dt><dd class="mono">${d.filesystem || '—'}</dd>
+</dl></div>`;
+  }
+  // Generic fallback for network etc.
+  return `<div class="section-title">${item.title}</div>
+<div class="card"><dl class="kv">
+  <dt>Status</dt><dd><span class="dot dot-${item.dot}" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> ${item.sub}</dd>
+</dl></div>
+<pre class="code">${JSON.stringify(d, null, 2)}</pre>`;
+}
+
+function detailModels(item) {
+  const d = item.detail || {};
+  return `<div class="section-title">Model</div>
+<div class="card"><dl class="kv">
+  <dt>Name</dt><dd><strong>${d.name || item.title}</strong></dd>
+  <dt>Type</dt><dd>${d.type || '—'}</dd>
+  <dt>Size</dt><dd>${d.sizeBytes ? formatBytes(d.sizeBytes) : '—'}</dd>
+  <dt>Quantization</dt><dd>${d.quantization || 'native'}</dd>
+  <dt>Status</dt><dd><span class="list-badge ${item.badge || 'badge-info'}">${d.status || '—'}</span></dd>
+  <dt>Loaded At</dt><dd>${d.loadedAt || '—'}</dd>
+</dl></div>
+${d.manifestHash ? `<div class="section-title">Verification</div>
+<div class="card"><dl class="kv">
+  <dt>Manifest Hash</dt><dd class="mono" style="word-break:break-all">${d.manifestHash}</dd>
+  <dt>Blessed</dt><dd>${d.blessed ? '<span class="verified">✓ Blessed</span>' : '<span class="unverified">✗ Not blessed</span>'}</dd>
+  ${d.installPath ? `<dt>Install Path</dt><dd class="mono">${d.installPath}</dd>` : ''}
+</dl></div>` : ''}
+${d.throughput || d.latencyMs ? `<div class="section-title">Performance</div>
+<div class="stat-grid">
+  ${d.throughput ? `<div class="stat-card"><div class="stat-val">${d.throughput}</div><div class="stat-label">Throughput</div></div>` : ''}
+  ${d.latencyMs ? `<div class="stat-card"><div class="stat-val">${d.latencyMs} ms</div><div class="stat-label">Latency</div></div>` : ''}
+</div>` : ''}`;
+}
+
+function detailContainers(item) {
+  const d = item.detail || {};
+  const res = d.resources || {};
+  return `<div class="section-title">Container</div>
+<div class="card"><dl class="kv">
+  <dt>Name</dt><dd><strong>${d.name || item.title}</strong></dd>
+  <dt>Service</dt><dd>${d.service || '—'}</dd>
+  <dt>Port</dt><dd>${d.port || '—'}</dd>
+  <dt>Status</dt><dd><span class="dot dot-${item.dot}" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> ${d.status || '—'}</dd>
+  <dt>Started</dt><dd>${d.startedAt || '—'}</dd>
+</dl></div>
+${d.imageHash ? `<div class="section-title">Image</div>
+<div class="card"><dl class="kv">
+  <dt>Image Hash</dt><dd class="mono">${d.imageHash}</dd>
+  <dt>Blessed</dt><dd>${d.blessed ? '<span class="verified">✓ Blessed</span>' : '—'}</dd>
+  <dt>Base</dt><dd>${d.baseImage || '—'}</dd>
+</dl></div>` : ''}
+<div class="section-title">Resources</div>
+<div class="bar-row"><span class="bar-label">CPU</span><div class="bar-track"><div class="bar-fill" style="width:${res.cpuPct||0}%;background:var(--blue)"></div></div><span class="bar-val">${res.cpuPct||0}%</span></div>
+<div class="bar-row"><span class="bar-label">Memory</span><div class="bar-track"><div class="bar-fill" style="width:${res.memPct||0}%;background:var(--blue)"></div></div><span class="bar-val">${res.memPct||0}%</span></div>
+<div class="bar-row"><span class="bar-label">GPU</span><div class="bar-track"><div class="bar-fill" style="width:${res.gpuPct||0}%;background:var(--green)"></div></div><span class="bar-val">${res.gpuPct||0}%</span></div>
+${d.isolation ? `<div class="section-title">Isolation</div>
+<div class="card"><dl class="kv">
+  <dt>Network</dt><dd>${d.isolation.network || '—'}</dd>
+  <dt>Filesystem</dt><dd>${d.isolation.filesystem || '—'}</dd>
+  ${d.isolation.socket ? `<dt>Socket</dt><dd class="mono">${d.isolation.socket}</dd>` : ''}
+</dl></div>` : ''}`;
+}
+
+function detailGovernance(item) {
+  const d = item.detail || {};
+  const cur = d.signatures || 0;
+  const tot = d.quorumSize || 5;
+  const threshold = d.threshold || 3;
+  const pct = tot > 0 ? (cur / tot) * 100 : 0;
+  const sigRows = (d.signedAt || []).map(s =>
+    `<div style="margin-bottom:3px"><span class="verified">✓</span> ${shortUri(s.signer)} — ${timeAgo(s.at)}</div>`
+  ).join('');
+  return `<div class="section-title">Governance Action</div>
+<div class="card"><dl class="kv">
+  <dt>Action</dt><dd><strong>${d.title || item.title}</strong></dd>
+  <dt>Subject</dt><dd>${d.subject || '—'}</dd>
+  <dt>Status</dt><dd><span class="list-badge ${item.badge}">${item.badgeText}</span></dd>
+  <dt>Threshold</dt><dd>${threshold}-of-${tot}</dd>
+  <dt>Created</dt><dd>${d.createdAt || '—'}</dd>
+</dl></div>
+<div class="section-title">Quorum Progress</div>
+<div class="card">
+  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+    <span style="color:var(--text-2)">${cur} of ${tot} signatures</span>
+    <span style="color:${cur>=threshold?'var(--green)':'var(--yellow)'}">need ${threshold}</span>
+  </div>
+  <div class="quorum-bar"><div class="quorum-fill" style="width:${pct}%;background:${cur>=threshold?'var(--green)':'var(--yellow)'}"></div></div>
+  <div style="margin-top:10px;font-size:12px;color:var(--text-3)">${sigRows}
+    ${cur < tot ? '<div style="color:var(--text-3)">⏳ Awaiting more signatures</div>' : ''}
+  </div>
+</div>
+${d.rateLimit ? `<div class="section-title">Rate Limits</div>
+<div class="card"><pre class="code">${JSON.stringify(d.rateLimit, null, 2)}</pre></div>` : ''}`;
+}
+
+function detailCache(item) {
+  const d = item.detail || {};
+  const hitRate = d.hitRate || 0;
+  return `<div class="section-title">${item.title}</div>
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-val">${d.sizePretty || formatBytes(d.sizeBytes || 0)}</div><div class="stat-label">Size</div></div>
+  <div class="stat-card"><div class="stat-val">${(d.entries || 0).toLocaleString()}</div><div class="stat-label">Entries</div></div>
+  <div class="stat-card"><div class="stat-val" style="color:var(--green)">${hitRate}%</div><div class="stat-label">Hit Rate</div></div>
+  <div class="stat-card"><div class="stat-val">LRU</div><div class="stat-label">Eviction</div></div>
+</div>
+<div class="section-title">Stats</div>
+<div class="card"><dl class="kv">
+  <dt>Hits</dt><dd>${(d.hits || 0).toLocaleString()}</dd>
+  <dt>Misses</dt><dd>${(d.misses || 0).toLocaleString()}</dd>
+  <dt>Storage Path</dt><dd class="mono">${d.storagePath || '—'}</dd>
+</dl></div>
+<div class="section-title">Utilization</div>
+<div class="card">
+  <div class="bar-row"><span class="bar-label">Capacity</span><div class="bar-track"><div class="bar-fill" style="width:${Math.min(hitRate, 100)}%;background:var(--blue)"></div></div><span class="bar-val">${hitRate}%</span></div>
+</div>`;
+}
+
+function detailMetrics(item) {
+  const d = item.detail || {};
+  const colors = ['var(--blue)','var(--green)','var(--yellow)','var(--red)','var(--blue-soft)','var(--green-soft)','var(--yellow-soft)','var(--red-soft)'];
+
+  if (item.id === 'cpu' && d.cores) {
+    const bars = d.cores.map((c, i) =>
+      `<div class="bar-row"><span class="bar-label">Core ${c.core}</span><div class="bar-track"><div class="bar-fill" style="width:${c.pct}%;background:${colors[i%colors.length]}"></div></div><span class="bar-val">${c.pct}%</span></div>`
+    ).join('');
+    return `<div class="section-title">CPU</div>
+<div class="card">${bars}</div>
+<div class="card"><dl class="kv">
+  <dt>Average</dt><dd>${d.avgPct || 0}%</dd>
+  <dt>Model</dt><dd>${d.model || '—'}</dd>
+  <dt>Load Average</dt><dd>${(d.loadAvg || []).map(v => v.toFixed(2)).join(', ')}</dd>
+</dl></div>`;
+  }
+
+  if (item.id === 'memory') {
+    const pct = d.usePct || 0;
+    return `<div class="section-title">Memory</div>
+<div class="card">
+  <div class="bar-row"><span class="bar-label">Used</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--blue)"></div></div><span class="bar-val">${pct}%</span></div>
+</div>
+<div class="card"><dl class="kv">
+  <dt>Total</dt><dd>${formatBytes(d.totalBytes || 0)}</dd>
+  <dt>Used</dt><dd>${formatBytes(d.usedBytes || 0)}</dd>
+  <dt>Free</dt><dd>${formatBytes(d.freeBytes || 0)}</dd>
+  <dt>Process RSS</dt><dd>${formatBytes(d.rss || 0)}</dd>
+  <dt>Heap Used</dt><dd>${formatBytes(d.heapUsed || 0)}</dd>
+</dl></div>`;
+  }
+
+  if (item.id === 'gpu') {
+    if (!d.available) return `<div class="section-title">GPU</div><div class="card"><p>No GPU detected</p></div>`;
+    return `<div class="section-title">GPU</div>
+<div class="card">
+  <div class="bar-row"><span class="bar-label">Compute</span><div class="bar-track"><div class="bar-fill" style="width:${d.utilPct}%;background:var(--green)"></div></div><span class="bar-val">${d.utilPct}%</span></div>
+  <div class="bar-row"><span class="bar-label">Memory</span><div class="bar-track"><div class="bar-fill" style="width:${d.memTotal>0?Math.round(d.memUsed/d.memTotal*100):0}%;background:var(--blue)"></div></div><span class="bar-val">${d.memTotal>0?Math.round(d.memUsed/d.memTotal*100):0}%</span></div>
+</div>
+<div class="card"><dl class="kv">
+  <dt>Name</dt><dd>${d.name}</dd>
+  <dt>Memory Used</dt><dd>${formatBytes(d.memUsed)}</dd>
+  <dt>Memory Total</dt><dd>${formatBytes(d.memTotal)}</dd>
+  <dt>Temperature</dt><dd>${d.tempC}°C</dd>
+</dl></div>`;
+  }
+
+  // Generic metric detail (disk-io, network)
+  return `<div class="section-title">${item.title}</div>
+<div class="card"><dl class="kv">
+  <dt>Current</dt><dd>${item.sub}</dd>
+</dl></div>
+<pre class="code">${JSON.stringify(d, null, 2)}</pre>`;
+}
+
+const DETAIL_FN = {
+  peers: detailPeers, registry: detailRegistry, claims: detailClaims,
+  identity: detailIdentity, payments: detailPayments, log: detailLog,
+  git: detailGit, system: detailSystem, models: detailModels,
+  containers: detailContainers, governance: detailGovernance,
+  cache: detailCache, metrics: detailMetrics,
+};
+
+// ══════════════════════════════════════════════════════════════
+// Rendering
+// ══════════════════════════════════════════════════════════════
+
+function renderNav() {
+  const el = document.getElementById('navItems');
+  el.innerHTML = SECTIONS.map(sec => `
+    <div class="nav-section">
+      <div class="nav-section-label">${sec.label}</div>
+      ${sec.tabs.map(t => {
+        const cached = cachedData[t.id];
+        const count = cached ? cached.items.length : null;
+        return `<div class="nav-item${activeTab===t.id?' active':''}" data-tab="${t.id}">
+          <span class="emoji">${t.icon}</span>
+          <span>${t.label}</span>
+          ${count != null ? `<span class="badge">${count}</span>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+  el.querySelectorAll('.nav-item').forEach(n =>
+    n.addEventListener('click', () => selectTab(n.dataset.tab))
+  );
+}
+
+function renderList(tabId, items) {
+  const tab = SECTIONS.flatMap(s=>s.tabs).find(t=>t.id===tabId);
+  document.getElementById('listTitle').textContent = tab ? `${tab.icon} ${tab.label}` : '';
+  document.getElementById('listCount').textContent = items.length + ' items';
+  const el = document.getElementById('listItems');
+  el.innerHTML = items.map(it => `
+    <div class="list-item${activeItem===it.id?' active':''}" data-id="${it.id}">
+      <div class="list-title">${esc(it.title)}</div>
+      <div class="list-sub">${esc(it.sub || '')}</div>
+      <div class="list-meta">
+        ${it.dot?`<span class="dot dot-${it.dot}"></span>`:''}
+        ${it.badge?`<span class="list-badge ${it.badge}">${esc(it.badgeText||'')}</span>`:''}
+        ${it.meta?`<span>${esc(it.meta)}</span>`:''}
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.list-item').forEach(n =>
+    n.addEventListener('click', () => selectItem(tabId, n.dataset.id))
+  );
+}
+
+function renderDetail(tabId, itemId) {
+  const cached = cachedData[tabId];
+  if (!cached) return;
+  const item = cached.items.find(i => i.id === itemId);
+  if (!item) return;
+  document.getElementById('detailHeader').hidden = false;
+  document.getElementById('detailTitle').textContent = item.title;
+  document.getElementById('detailEmpty').hidden = true;
+  const fn = DETAIL_FN[tabId];
+  document.getElementById('detailBody').innerHTML =
+    `<div class="detail-body">${fn ? fn(item) : `<pre class="code">${JSON.stringify(item.detail || item, null, 2)}</pre>`}</div>`;
+}
+
+function showListLoading() {
+  document.getElementById('listItems').innerHTML = '<div class="loading">Loading…</div>';
+}
+
+function showListError(msg) {
+  document.getElementById('listItems').innerHTML =
+    `<div class="fetch-error">⚠ ${esc(msg)}<span class="retry" onclick="selectTab('${activeTab}')">retry</span></div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// Selection & polling
+// ══════════════════════════════════════════════════════════════
+
+async function selectTab(tabId) {
+  activeTab = tabId;
+  activeItem = null;
+  renderNav();
+  showListLoading();
+  resetDetail();
+
+  // Mobile: show list
+  document.getElementById('listCol').classList.add('open');
+  document.getElementById('detailCol').classList.remove('open');
+
+  try {
+    const items = await fetchTabData(tabId);
+    if (activeTab === tabId) {
+      renderList(tabId, items);
+      renderNav(); // update badge counts
+    }
+  } catch (err) {
+    if (activeTab === tabId) showListError(err.message);
+  }
+
+  // Start polling for this tab
+  startPolling(tabId);
+}
+
+function selectItem(tabId, itemId) {
+  activeItem = itemId;
+  const cached = cachedData[tabId];
+  if (cached) renderList(tabId, cached.items);
+  renderDetail(tabId, itemId);
+  document.getElementById('detailCol').classList.add('open');
+}
+
+function resetDetail() {
+  document.getElementById('detailHeader').hidden = true;
+  document.getElementById('detailBody').innerHTML = `<div class="detail-empty" id="detailEmpty">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="40" height="40" style="opacity:.2">
+      <path fill="currentColor" d="M16 2 4 8.6v6.2L16 8.2z"/><path fill="currentColor" d="M16 8.2 28 14.8V8.6L16 2z"/>
+      <path fill="currentColor" d="M4 16.4v7.2L15 30v-7.2z"/><path fill="currentColor" d="M17 22.8V30l11-6.4v-7.2z"/>
+    </svg>Select an item to inspect</div>`;
+}
+
+function closeList() {
+  document.getElementById('listCol').classList.remove('open');
+  activeTab = null;
+  renderNav();
+  stopPolling();
+}
+
+function closeDetail() {
+  document.getElementById('detailCol').classList.remove('open');
+  activeItem = null;
+  if (activeTab && cachedData[activeTab]) renderList(activeTab, cachedData[activeTab].items);
+}
+
+function startPolling(tabId) {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    if (activeTab !== tabId) return;
+    try {
+      const items = await fetchTabData(tabId);
+      if (activeTab === tabId) {
+        renderList(tabId, items);
+        renderNav();
+        if (activeItem) renderDetail(tabId, activeItem);
+      }
+    } catch (_) { /* silent refresh failure */ }
+  }, POLL_INTERVAL);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// ── Nav toggle ──
+function toggleNav() {
+  const nav = document.getElementById('navCol');
+  nav.classList.toggle('collapsed');
+  const app = document.querySelector('.app');
+  const w = nav.classList.contains('collapsed') ? '60px' : '224px';
+  app.style.gridTemplateColumns = `${w} var(--list-w) 1fr`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// Health check & status footer
+// ══════════════════════════════════════════════════════════════
+
+async function checkHealth() {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  try {
+    const data = await apiFetch('/healthz');
+    if (data && data.ok) {
+      nodeHealthy = true;
+      dot.style.background = 'var(--green)';
+      const peers = await apiFetch('/safenet/v1/peers').catch(() => null);
+      const peerCount = peers && peers.peers ? peers.peers.length : 0;
+      text.textContent = `Node healthy · ${peerCount} peer${peerCount !== 1 ? 's' : ''}`;
+    } else {
+      throw new Error('unhealthy');
+    }
+  } catch (_) {
+    nodeHealthy = false;
+    dot.style.background = 'var(--red)';
+    text.textContent = 'Node unreachable';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Utility functions
+// ══════════════════════════════════════════════════════════════
+
+function shortHash(h) {
+  if (!h || h.length < 12) return h || '';
+  return h.slice(0, 4) + '…' + h.slice(-4);
+}
+
+function shortUri(uri) {
+  if (!uri) return '';
+  if (uri.length <= 24) return uri;
+  // For safebox:// URIs, show scheme + truncated hash
+  if (uri.startsWith('safebox://')) {
+    const hash = uri.slice('safebox://'.length);
+    return 'safebox://' + shortHash(hash);
+  }
+  return uri.slice(0, 10) + '…' + uri.slice(-8);
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const now = Date.now();
+  const then = new Date(ts).getTime();
+  const diff = now - then;
+  if (isNaN(diff) || diff < 0) return ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + ' min ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + ' hr ago';
+  return Math.floor(diff / 86400000) + ' day(s) ago';
+}
+
+function formatBytes(b) {
+  if (!b || b === 0) return '0 B';
+  const units = ['B','KB','MB','GB','TB'];
+  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), units.length - 1);
+  const val = b / Math.pow(1024, i);
+  return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════════════
+
+renderNav();
+checkHealth();
+setInterval(checkHealth, 30000); // re-check every 30s
+</script>

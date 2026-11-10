@@ -260,7 +260,7 @@ unzip Infrastructure.zip -d /opt/safebox-infrastructure
 
 # Run install script
 cd /opt/safebox-infrastructure
-sudo bash scripts/install.sh
+sudo bash scripts/install.sh   # removed in 1.0: build the AMI with aws/scripts/build-image.sh instead (see aws/INSTRUCTIONS.md)
 ```
 
 ### Step 10: Deploy Safebox

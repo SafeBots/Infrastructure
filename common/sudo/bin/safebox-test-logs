@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by a tenant instance. The test
+# container must carry the calling tenant's label (caller from SUDO_UID,
+# see safebox-caller.sh); another tenant's test is refused. Follows the log
+# stream of a test container. Exactly one input:
+#
+#   argv[1] test-id     ^[a-z0-9-]{1,40}$
+#
+# The container name is built here as safebox-test-<id>; only test-container
+# logs can be read through this path. Output is the container's stdout and
+# stderr, which the system component already owns in the test record.
+# See docs/HARDENING-PLAN.md fix 5.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+die() { printf 'safebox-test-logs: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+
+[[ $# -eq 1 ]] || die "usage: safebox-test-logs <test-id>"
+[[ $1 == -* ]] && die "argument may not start with '-'"
+test_id=$1
+[[ $test_id =~ ^[a-z0-9-]{1,40}$ ]] || die "invalid test-id"
+tenant=$(caller_tenant)
+test_owned_by "$test_id" "$tenant" || die "test '$test_id' does not belong to tenant '$tenant'"
+
+exec docker logs -f "safebox-test-$test_id"

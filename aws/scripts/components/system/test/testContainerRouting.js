@@ -95,7 +95,7 @@ rejected({ tool: 'npm', action: 'list', managedContainer: '_host' },
 // ── Container tools accepted with default containerWorkdir ──────────────────
 accepted({ tool: 'npm', action: 'list', managedContainer: 'safebox-app-foo' },
     'accept: npm with default workdir');
-accepted({ tool: 'npm', action: 'list', managedContainer: 'safebox-app-foo', containerWorkdir: '/srv/app' },
+accepted({ tool: 'npm', action: 'list', managedContainer: 'safebox-app-foo', containerWorkdir: '/workspace' },
     'accept: npm with explicit workdir');
 
 // ── Bad containerWorkdir ────────────────────────────────────────────────────
@@ -151,14 +151,48 @@ check('custom containerName + runUser preserved',
 const r3 = { tool: 'npm', action: 'list', managedContainer: 'safebox-app-foo' };
 ops._validateRequest(r3);
 check('default containerWorkdir applied',
-    r3._containerWorkdir === '/app',
+    r3._containerWorkdir === '/workspace',
     'got: ' + r3._containerWorkdir);
 
 const r4 = { tool: 'npm', action: 'list', managedContainer: 'safebox-app-foo', containerWorkdir: '/srv/foo' };
-ops._validateRequest(r4);
-check('explicit containerWorkdir preserved',
-    r4._containerWorkdir === '/srv/foo',
-    'got: ' + r4._containerWorkdir);
+let r4Threw = false;
+try { ops._validateRequest(r4); } catch (e) { r4Threw = true; }
+check('containerWorkdir outside /workspace rejected (wrapper fixes --workdir /workspace)', r4Threw);
+
+// ── migrate is container-routed; the host never runs migrate.sh ─────────────
+accepted({ tool: 'migrate', action: 'run', managedContainer: 'safebox-app-foo' },
+    'accept: migrate run with no workspaceRoot (implied by socket identity)');
+accepted({ tool: 'migrate', action: 'status', managedContainer: 'safebox-app-foo',
+    workspaceRoot: '/srv/safebox/tenants/safebox-app-foo' },
+    'accept: migrate with workspaceRoot equal to own workspace');
+accepted({ tool: 'migrate', action: 'rollback', managedContainer: 'safebox-app-foo', target: '20240101_init' },
+    'accept: migrate rollback with target');
+rejected({ tool: 'migrate', action: 'run', managedContainer: 'safebox-app-foo',
+    workspaceRoot: '/srv/safebox/tenants/safebox-app-custom' },
+    'FORBIDDEN_WORKSPACE', 'reject: migrate with another tenant\'s workspaceRoot');
+rejected({ tool: 'migrate', action: 'run', managedContainer: 'safebox-app-foo',
+    workspaceRoot: '/srv/safebox/tenants/safebox-app-foo/../safebox-app-custom' },
+    'FORBIDDEN_WORKSPACE', 'reject: migrate with traversal in workspaceRoot');
+rejected({ tool: 'migrate', action: 'run', managedContainer: 'safebox-app-foo', workspaceRoot: '/tmp' },
+    'FORBIDDEN_WORKSPACE', 'reject: migrate with /tmp workspaceRoot');
+rejected({ tool: 'migrate', action: 'exec', managedContainer: 'safebox-app-foo' },
+    'BAD_REQUEST', 'reject: migrate unknown action');
+rejected({ tool: 'migrate', action: 'run', managedContainer: 'safebox-app-foo', target: '../x' },
+    'BAD_REQUEST', 'reject: migrate target with traversal');
+rejected({ tool: 'npm', action: 'list', managedContainer: 'safebox-app-foo', workspaceRoot: '/srv/safebox/tenants/other' },
+    'FORBIDDEN_WORKSPACE', 'reject: npm with foreign workspaceRoot');
+check('migrate is a container tool, not host-native',
+    ops._CONTAINER_TOOLS.has('migrate') && !ops._HOST_NATIVE_TOOLS.has('migrate'));
+check('migrate actions are run|rollback|status',
+    JSON.stringify([...ops._MIGRATE_ACTIONS].sort()) === JSON.stringify(['rollback', 'run', 'status']));
+{
+    const b = ops._TOOL_BUILDERS.migrate({ action: 'run', target: 'v2' });
+    check('migrate builder yields wrapper pseudo-tool argv (no host bash, no host path)',
+        b[0] === 'migrate' && JSON.stringify(b[1]) === JSON.stringify(['run', 'v2']));
+    const src = fs.readFileSync(path.join(__dirname, '..', 'opsSystem.js'), 'utf8');
+    check('opsSystem.js no longer references /usr/bin/env or migrate.sh',
+        !src.includes('/usr/bin/env') && !src.includes('migrate.sh\'') && !/path\.join\([^)]*migrate\.sh/.test(src));
+}
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────
 fs.rmSync(tmpDir, { recursive: true, force: true });

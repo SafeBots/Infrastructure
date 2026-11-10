@@ -1,0 +1,1 @@
+The autovhost component moved to [common/autovhost/](../../../../common/autovhost/); it is the same on all four clouds (public IP lookup branches on the `cloud` field of /var/lib/safebox/dnsclient.json), and its generated nginx vhosts and certificates live on the pool under /var/lib/safebox/nginx/.

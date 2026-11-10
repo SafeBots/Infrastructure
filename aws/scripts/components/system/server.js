@@ -1,23 +1,28 @@
 // /opt/safebox/system/server.js
 //
-// Multi-socket HTTP server for the Safebox System component.
+// HTTP server for the Safebox System component over one Unix domain
+// socket. The same program runs in two roles, chosen by the unit that
+// starts it (docs/HARDENING-PLAN.md, "Per-tenant isolation"):
 //
-//   • One Unix domain socket per managed container at
-//     /run/safebox/containers/<name>.sock — bind-mounted into that container
-//     at /run/safebox/system.sock. Authenticated with a per-container HMAC
-//     key derived from the master via HKDF.
+//   • Tenant instance (safebox-system@<name>.service, SAFEBOX_TENANT=<name>,
+//     uid safebox-sys-<name>): serves /run/safebox/containers/<name>.sock,
+//     bind-mounted into that container at /run/safebox/system.sock.
+//     Authenticated with the per-container key read from
+//     /run/safebox/keys/<name>/instance.hmac. Handles /system, /test and
+//     /embed for that one tenant and refuses every control route.
 //
-//   • One control socket at /run/safebox/control.sock — host-only, not
-//     bind-mounted into any container. Authenticated with the master HMAC
-//     key. Handles _host-scope operations: dnf, /models, /containers
-//     lifecycle.
+//   • Operator instance (safebox-system.service, no SAFEBOX_TENANT, uid
+//     safebox-infra): serves /run/safebox/control.sock — host-only, not
+//     bind-mounted into any container. Authenticated with the operator key
+//     from /run/safebox/keys/_operator/control.hmac. Handles the _host-scope
+//     operations: /models, /containers lifecycle, /volumes, /succession,
+//     and starts one tenant instance per declared container.
 //
-// The socket the connection arrived on determines the calling identity.
-// The request body's managedContainer is validated against the socket
-// identity — they must agree, or the request is rejected.
-//
-// All listeners share the same routing, validation, and audit logic; the
-// only difference is which HMAC key the request is verified against and
+// Neither role holds the HMAC seed or the master; those are safebox-keyd's.
+// The socket the connection arrived on determines the calling identity, and
+// the request body's managedContainer is validated against it — they must
+// agree, or the request is rejected. The routing, validation and audit
+// logic is the same in both roles; the role decides which socket exists and
 // which scope of operations is permitted.
 
 'use strict';
@@ -32,10 +37,18 @@ const opsTest = require('./opsTest');
 const opsModels = require('./opsModels');
 const opsContainers = require('./opsContainers');
 const opsEmbed = require('./opsEmbed');
+const opsVolumes = require('./opsVolumes');
+const succession = require('./succession');
+const instanceIdentity = require('./instanceIdentity');
+const transparency = require('./transparency');
 const secret = require('./secret');
 const sockets = require('./sockets');
+const ocpVerify = require('./ocpVerify');
+const governanceKeys = require('./governanceKeys');
 
 const MAX_BODY_BYTES = 1024 * 1024;  // 1 MiB
+const IS_TENANT = sockets.IS_TENANT;
+const TENANT = sockets.TENANT;
 
 let auditProc = null;
 let auditFallback = false;
@@ -154,6 +167,64 @@ function reconcileIdentity(socketIdentity, bodyRef) {
     return { ok: true };
 }
 
+// ── Governance gate ─────────────────────────────────────────────────────────
+//
+// Operations that expand or modify the trust surface require an OCP claim
+// signed by M-of-N governance signers. The claim is in body.ocpClaim.
+// Returns null for HMAC-only operations, { ok: true } for governance-passed,
+// or { ok: false, code, message } for governance-rejected.
+
+// Map of (method, path-prefix) to the governance operation name used to
+// look up the threshold in governance-keys.json. Entries not listed here
+// are HMAC-only (no governance required).
+const GOVERNANCE_OPERATIONS = [
+    { method: 'POST', prefix: '/system',             operation: 'system' },
+    { method: 'POST', prefix: '/containers/create',  operation: 'containers/create' },
+    { method: 'POST', prefix: '/containers/destroy',  operation: 'containers/destroy' },
+    { method: 'POST', prefix: '/models/install',      operation: 'models/install' },
+    { method: 'POST', prefix: '/volumes/install',     operation: 'volumes/install' },
+    { method: 'POST', prefix: '/succession/',         operation: 'succession/initiate' },
+];
+
+function governanceOperationFor(method, pathname) {
+    for (const entry of GOVERNANCE_OPERATIONS) {
+        if (method === entry.method && (pathname === entry.prefix || pathname.startsWith(entry.prefix + '/'))) {
+            return entry.operation;
+        }
+    }
+    return null;
+}
+
+function checkGovernance(method, pathname, body) {
+    const operation = governanceOperationFor(method, pathname);
+    if (!operation) return null;  // HMAC-only — no governance required
+
+    // Governance keys may not be loaded yet (first boot, dev mode).
+    // If no registry is available, reject all governed operations.
+    let trustedKeys, threshold;
+    try {
+        trustedKeys = governanceKeys.getTrustedKeys();
+        threshold = governanceKeys.getThreshold(operation);
+    } catch (e) {
+        return { ok: false, code: 'GOVERNANCE_UNAVAILABLE',
+            message: 'governance key registry not loaded: ' + e.message };
+    }
+
+    const claim = body && body.ocpClaim;
+    if (!claim) {
+        return { ok: false, code: 'GOVERNANCE_REQUIRED',
+            message: `operation '${operation}' requires an OCP governance claim` };
+    }
+
+    const result = ocpVerify.verifyThreshold(claim, threshold.m, trustedKeys);
+    if (!result.ok) {
+        return { ok: false, code: 'GOVERNANCE_REJECTED',
+            message: `governance verification failed for '${operation}': ${result.message || result.code}` };
+    }
+
+    return { ok: true };
+}
+
 // ── Router ───────────────────────────────────────────────────────────────────
 
 const TEST_KEEPALIVE = /^\/test\/([a-zA-Z0-9_-]+)\/keepalive$/;
@@ -162,10 +233,20 @@ const TEST_STOP      = /^\/test\/([a-zA-Z0-9_-]+)\/stop$/;
 const TEST_STATUS    = /^\/test\/([a-zA-Z0-9_-]+)$/;
 
 // Endpoints reachable ONLY from the control socket
-const CONTROL_ONLY_PREFIXES = ['/models', '/containers'];
+const CONTROL_ONLY_PREFIXES = ['/models', '/containers', '/volumes', '/succession'];
 
 async function route(method, pathname, query, body, socketIdentity) {
     const isControl = socketIdentity === sockets.CONTROL_IDENTITY;
+
+    // Role guard. A tenant instance never serves the control socket and the
+    // operator never serves a per-container socket; sockets.js cannot open
+    // the other role's listener, so this is belt and braces.
+    if (IS_TENANT && isControl) {
+        return { status: 'error', code: 'WRONG_SOCKET', message: 'tenant instance has no control socket', _http: 403 };
+    }
+    if (!IS_TENANT && !isControl) {
+        return { status: 'error', code: 'WRONG_SOCKET', message: 'operator instance serves the control socket only', _http: 403 };
+    }
 
     // Healthz: any socket can ask
     if (method === 'GET' && pathname === '/healthz') {
@@ -230,7 +311,72 @@ async function route(method, pathname, query, body, socketIdentity) {
         return await opsEmbed.handle(method, pathname, body);
     }
 
+    // /volumes — volume management, control-only
+    if (pathname.startsWith('/volumes')) {
+        if (!isControl) return { status: 'error', code: 'WRONG_SOCKET',
+            message: '/volumes/* only reachable from control socket', _http: 403 };
+        return await opsVolumes.handle(method, pathname, body);
+    }
+
+    // /succession — succession/failover/recovery, control-only
+    if (pathname.startsWith('/succession')) {
+        if (!isControl) return { status: 'error', code: 'WRONG_SOCKET',
+            message: '/succession/* only reachable from control socket', _http: 403 };
+        return succession.handle(method, pathname, body);
+    }
+
+    // /attestation — public endpoints (no HMAC required)
+    // Note: these are handled before HMAC verification in handleRequest
+    // for unauthenticated access. When reached here, the caller already
+    // passed HMAC (authenticated query from a container).
+    if (pathname.startsWith('/attestation')) {
+        return handleAttestationRoute(method, pathname, body);
+    }
+
+    // /transparency — public read-only log (no HMAC required)
+    // Same dual-path as /attestation.
+    if (pathname.startsWith('/transparency')) {
+        return handleTransparencyRoute(method, pathname);
+    }
+
     return { status: 'error', code: 'NOT_FOUND', message: 'no such endpoint', _http: 404 };
+}
+
+// The transparency log is operator state (/var/lib/safebox/transparency,
+// 0750 safebox-infra); a tenant instance neither reads nor appends to it.
+function handleTransparencyRoute(method, pathname) {
+    if (IS_TENANT) {
+        return { status: 'error', code: 'NOT_SUPPORTED',
+            message: 'the transparency log is served by the operator instance', _http: 404 };
+    }
+    return transparency.handle(method, pathname);
+}
+
+// ── Attestation route helper ────────────────────────────────────────────────
+
+function handleAttestationRoute(method, pathname, body) {
+    if (method === 'GET' && pathname === '/attestation') {
+        const claim = instanceIdentity.issueAttestationClaim();
+        return { status: 'ok', data: claim };
+    }
+    if (method === 'POST' && pathname === '/attestation/challenge') {
+        if (!body || typeof body.nonce !== 'string') {
+            return { status: 'error', code: 'BAD_REQUEST', message: 'nonce required', _http: 400 };
+        }
+        const response = instanceIdentity.handleChallenge(body.nonce);
+        return { status: 'ok', data: response };
+    }
+    return { status: 'error', code: 'NOT_FOUND', message: 'no such attestation endpoint', _http: 404 };
+}
+
+// ── Public endpoints (no HMAC required) ─────────────────────────────────────
+// /attestation and /transparency are public read-only endpoints, accessible
+// without HMAC authentication. They are handled before the HMAC check.
+
+const PUBLIC_PREFIXES = ['/attestation', '/transparency'];
+
+function isPublicEndpoint(pathname) {
+    return PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'));
 }
 
 // ── Request handler ──────────────────────────────────────────────────────────
@@ -251,6 +397,27 @@ async function handleRequest(req, res, { socketIdentity, hmacKey }) {
     } catch (e) {
         sendJson(res, e.httpStatus || 400, { status: 'error', code: 'BAD_REQUEST', message: e.message });
         audit({ event: 'request', identity: socketIdentity, method, path: req.url, status: e.httpStatus || 400, durationMs: Date.now() - startedMs, error: 'body_read' });
+        return;
+    }
+
+    // Public endpoints bypass HMAC authentication
+    if (isPublicEndpoint(pathname)) {
+        let pubBody = null;
+        if (bodyStr) {
+            try { pubBody = JSON.parse(bodyStr); } catch { pubBody = null; }
+        }
+        let pubResult;
+        if (pathname.startsWith('/attestation')) {
+            pubResult = handleAttestationRoute(method, pathname, pubBody);
+        } else if (pathname.startsWith('/transparency')) {
+            pubResult = handleTransparencyRoute(method, pathname);
+        } else {
+            pubResult = { status: 'error', code: 'NOT_FOUND', message: 'no such endpoint', _http: 404 };
+        }
+        const pubHttp = pubResult._http || statusFromCode(pubResult.code);
+        delete pubResult._http;
+        sendJson(res, pubHttp, pubResult);
+        audit({ event: 'request', identity: 'public', method, path: req.url, status: pubHttp, durationMs: Date.now() - startedMs });
         return;
     }
 
@@ -285,6 +452,18 @@ async function handleRequest(req, res, { socketIdentity, hmacKey }) {
         return;
     }
     body = bodyRef.body;
+
+    // ── Governance gate ─────────────────────────────────────────────────
+    // Privileged operations require an OCP claim signed by M-of-N
+    // governance signers. The claim must be present in body.ocpClaim,
+    // verified against the governance key registry, and its stm must
+    // bind to the requested operation. HMAC-only operations skip this.
+    const govResult = checkGovernance(method, pathname, body);
+    if (govResult && !govResult.ok) {
+        sendJson(res, 403, { status: 'error', code: govResult.code, message: govResult.message });
+        audit({ event: 'governance_fail', identity: socketIdentity, method, path: req.url, reason: govResult.code, durationMs: Date.now() - startedMs });
+        return;
+    }
 
     let result;
     try {
@@ -332,36 +511,78 @@ async function handleRequest(req, res, { socketIdentity, hmacKey }) {
 // ── Startup / shutdown ───────────────────────────────────────────────────────
 
 async function start() {
-    const master = await secret.load();
+    // The one key this role may read: the tenant's instance key or the
+    // operator's control key, both written by safebox-keyd.
+    const key = await secret.load();
     config.reload();
-    sockets.start(master, handleRequest);
 
-    // Clean up any test docker containers left over from a previous System
-    // instance that crashed before it could shut them down. Best-effort —
-    // failures here are logged but don't prevent startup.
-    try { await opsTest.startupCleanup(); }
-    catch (e) { console.warn('[system] startup cleanup error:', e.message); }
+    // Load governance key registry (best-effort — dev environments may
+    // not have one). If loading fails, governed operations are rejected
+    // until a valid registry appears and SIGHUP triggers a reload. Both
+    // roles need it: /system is governed and runs in the tenant instance.
+    try { governanceKeys.load(); }
+    catch (e) { console.warn(`[system] WARN governance keys not loaded: ${e.message}`); }
 
-    // Fork the embeddings worker subprocess. Lazy-fork would also work
-    // (first /embed call), but eager fork lets `/embed/health` answer
-    // truthfully from the moment the server starts taking traffic, and
-    // catches transformers init errors at startup instead of at first use.
-    opsEmbed.startWorker();
+    // Initialize instance identity (ephemeral P-256 keypair, RAM-only).
+    // Each process has its own; a tenant's /attestation answers for that
+    // tenant's instance.
+    instanceIdentity.init();
+
+    if (!IS_TENANT) {
+        // Initialize transparency log (append-only); operator state.
+        try { transparency.init(); }
+        catch (e) { console.warn(`[system] WARN transparency log init failed: ${e.message}`); }
+
+        // Succession escrows the operator's key: it is the only key this
+        // process has. The master stays in keyd and is reconstructed on a
+        // successor from the sealed seed, never from an escrow.
+        try { succession.init({ masterSecret: key }); }
+        catch (e) { console.warn(`[system] WARN succession init failed: ${e.message}`); }
+    }
+
+    sockets.start(key, handleRequest);
+
+    if (IS_TENANT) {
+        // Clean up any test docker containers left over from a previous
+        // instance that crashed before it could shut them down. Best-effort.
+        try { await opsTest.startupCleanup(); }
+        catch (e) { console.warn('[system] startup cleanup error:', e.message); }
+
+        // Fork the embeddings worker subprocess. Eager fork lets
+        // `/embed/health` answer truthfully from the moment the server starts
+        // taking traffic, and catches transformers init errors at startup
+        // instead of at first use. /embed is per-container, so only a
+        // tenant instance runs a worker.
+        opsEmbed.startWorker();
+    } else {
+        // Bring up one safebox-system@<name> per declared container. They
+        // are not enabled units: their users are recreated each boot and
+        // the operator is what knows the list.
+        try {
+            const r = await opsContainers.startDeclaredInstances();
+            audit({ event: 'instances', started: r.started, failed: r.failed });
+        } catch (e) { console.warn('[system] starting tenant instances failed:', e.message); }
+    }
 
     process.on('SIGHUP', () => {
-        console.log('[system] SIGHUP — reloading config and reconciling sockets');
+        console.log('[system] SIGHUP — reloading config, governance keys, and reconciling sockets');
         config.reload();
+        try { governanceKeys.reload(); }
+        catch (e) { console.warn(`[system] WARN governance keys reload failed: ${e.message}`); }
         sockets.reconcile();
     });
 
-    audit({ event: 'startup', listeners: Array.from(sockets.listeners.keys()) });
+    audit({ event: 'startup', role: IS_TENANT ? 'tenant' : 'operator', tenant: TENANT || undefined,
+        listeners: Array.from(sockets.listeners.keys()) });
 }
 
 function shutdown(signal) {
     console.log(`[system] received ${signal}; shutting down`);
-    audit({ event: 'shutdown', signal });
-    opsTest.shutdownAll();
-    opsEmbed.shutdownWorker();
+    audit({ event: 'shutdown', signal, role: IS_TENANT ? 'tenant' : 'operator' });
+    if (IS_TENANT) {
+        opsTest.shutdownAll();
+        opsEmbed.shutdownWorker();
+    }
     sockets.shutdown().then(() => process.exit(0));
     setTimeout(() => process.exit(1), 30000).unref();
 }
@@ -376,4 +597,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { start, handleRequest };
+module.exports = { start, handleRequest, IS_TENANT, TENANT };

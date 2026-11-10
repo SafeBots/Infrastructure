@@ -23,8 +23,8 @@
 │  │         ↓ MySQL                                    │    │
 │  │  ┌─────────────────────────────────────────┐      │    │
 │  │  │  mariadb (172.20.0.20:3306)             │      │    │
-│  │  │  • ZFS-backed datasets                  │      │    │
-│  │  │  • Per-database isolation               │      │    │
+│  │  │  • ZFS-backed (entire datadir = 1 dataset)│    │    │
+│  │  │  • FTWRL + atomic snapshot for backups  │      │    │
 │  │  └─────────────────────────────────────────┘      │    │
 │  │                                                     │    │
 │  │  ┌─────────────────────────────────────────┐      │    │
@@ -70,9 +70,16 @@ tank/safebox/                       # Root dataset
 │   ├── www/                        # Static files
 │   └── logs/                       # Access/error logs
 │
-├── mariadb/                        # Database
-│   ├── data/                       # MySQL data directory
-│   │   ├── qbix/                   # Per-database dataset
+├── mariadb/                        # Database (single dataset)
+│   ├── data/                       # Entire MySQL datadir on ONE dataset
+│   │   │                           #   InnoDB redo/undo logs, ibdata1,
+│   │   │                           #   and .ibd files must be snapshotted
+│   │   │                           #   atomically — no per-database splits
+│   │   ├── ibdata1                 # System tablespace
+│   │   ├── ib_logfile0             # Redo log
+│   │   ├── ib_logfile1
+│   │   ├── auto.cnf                # Server UUID (delete on clone)
+│   │   ├── qbix/                   # Per-database .ibd files
 │   │   ├── streams/
 │   │   └── safebox/
 │   ├── conf/                       # Custom configs

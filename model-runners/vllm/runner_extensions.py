@@ -21,6 +21,7 @@ import logging
 import os
 import socket
 import stat
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -29,6 +30,10 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 import httpx
 import uvicorn
+
+# Import shared HMAC auth
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from safebox_auth import verify_hmac
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +89,24 @@ class SafeboxEmbedRequest(BaseModel):
 app = FastAPI(title="Safebox vLLM Adapter v1.1")
 request_queue: List[Dict[str, Any]] = []
 queue_lock = asyncio.Lock()  # Async-safe queue access
+
+
+# ============================================================================
+# HMAC MIDDLEWARE (strong canonical form via shared safebox_auth)
+# ============================================================================
+
+@app.middleware("http")
+async def hmac_middleware(request: Request, call_next):
+    """Verify HMAC on POST requests using shared safebox_auth."""
+    if request.method == "POST":
+        body = await request.body()
+        if not verify_hmac(request, body):
+            return Response(
+                content=json.dumps({"ok": False, "error": "HMAC verification failed"}),
+                status_code=401,
+                media_type="application/json",
+            )
+    return await call_next(request)
 
 # ============================================================================
 # SAFEBOX CANONICAL ENDPOINTS (Spec §4, §6)
@@ -380,183 +403,6 @@ async def openai_chat_alias(
     return result
 
 # ============================================================================
-# MODEL LIFECYCLE (called by system-protocol-api when M-of-N approves install)
-# ============================================================================
-#
-# These endpoints close the contract that docker/system-protocol-api.js
-# calls into when Safebox M-of-N approves a model lifecycle action.
-#
-# vLLM 0.6.0 caveat: a running vLLM process loads exactly one model at
-# startup and does not currently support hot model swap. A real
-# implementation of /v1/models/load therefore needs to either
-#   (a) run multiple vLLM processes side-by-side, one per loaded model, or
-#   (b) restart the vLLM subprocess against new --model arguments, or
-#   (c) wait for vLLM's planned multi-model support.
-# The stubs below acknowledge this honestly and return well-formed
-# responses so the system component's contract is satisfied even on
-# this runner's current single-model deployment.
-
-# In-memory bookkeeping. The "loaded model" for a single-model vLLM
-# process is determined at startup from VLLM_MODEL env var; we expose
-# that as the only loadable model here.
-_loaded_model_id = os.getenv('VLLM_MODEL', 'unknown')
-_load_tasks: Dict[str, Dict[str, Any]] = {}
-
-
-@app.post("/v1/models/load")
-async def models_load(request: Request):
-    """
-    Load a model into the runner.
-    
-    Called by docker/system-protocol-api.js::executeModelLoad after
-    M-of-N governance has approved the manifest. The runner is expected
-    to mount the read-only weights at /srv/safebox/models/<manifestHash>/
-    and bring up an inference process serving them.
-    
-    Body: { modelId, quantization, maxContextLength, evictModel, verifiedOpToken }
-    
-    Returns 200 with { modelId, verified, gpuMemoryUsedMB, loadTimeMs }
-    on synchronous completion, or 202 with { taskId } if the load is
-    expected to take more than a few seconds.
-    """
-    body = await request.json()
-    model_id = body.get('modelId')
-    verified_op_token = body.get('verifiedOpToken')
-    
-    if not model_id or not verified_op_token:
-        raise HTTPException(400, "modelId and verifiedOpToken required")
-    
-    # Single-model vLLM: report success only if this is the model we
-    # were launched with. Multi-model support would replace this block
-    # with subprocess management or model-pool logic.
-    if model_id == _loaded_model_id:
-        return {
-            "modelId": model_id,
-            "verified": True,
-            "gpuMemoryUsedMB": _approx_gpu_memory_mb(),
-            "loadTimeMs": 0,  # already loaded
-        }
-    
-    # Different model requested. On this runner we can't satisfy that
-    # without restarting the vLLM subprocess; return 501 honestly.
-    raise HTTPException(
-        501,
-        f"This vLLM runner instance is configured for {_loaded_model_id!r}. "
-        f"Hot-swap to {model_id!r} is not supported by vLLM 0.6.0. "
-        f"Deploy a second runner instance with VLLM_MODEL={model_id} instead."
-    )
-
-
-@app.get("/v1/models/load/{task_id}")
-async def models_load_status(task_id: str):
-    """Poll an async model-load task. See /v1/models/load for the sync path."""
-    task = _load_tasks.get(task_id)
-    if not task:
-        raise HTTPException(404, f"Unknown task {task_id}")
-    return task
-
-
-@app.post("/v1/models/unload")
-async def models_unload(request: Request):
-    """
-    Unload a model from the runner.
-    
-    Body: { modelId, verifiedOpToken }
-    Returns: { modelId, verified, gpuMemoryFreedMB, kvCacheFlushed }
-    
-    Single-model vLLM: unload means shutting down the vLLM subprocess.
-    A production implementation would mark the runner as evicted and
-    let the system component decide whether to restart it.
-    """
-    body = await request.json()
-    model_id = body.get('modelId')
-    verified_op_token = body.get('verifiedOpToken')
-    
-    if not model_id or not verified_op_token:
-        raise HTTPException(400, "modelId and verifiedOpToken required")
-    
-    # In a real implementation: subprocess.terminate() on the vLLM proc,
-    # mark this runner as evicted, free GPU memory. For now we record
-    # the request and respond with the contract-shaped envelope.
-    return {
-        "modelId": model_id,
-        "verified": True,
-        "gpuMemoryFreedMB": _approx_gpu_memory_mb(),
-        "kvCacheFlushed": True,
-    }
-
-
-@app.post("/v1/cache/flush")
-async def cache_flush(request: Request):
-    """
-    Flush the KV cache for a given scope.
-    
-    Body: { scope, modelId?, tenantId?, tag?, verifiedOpToken }
-      scope: "all" | "model" | "tenant" | "tag"
-    Returns: { scope, verified, entriesRemoved, memoryFreedMB }
-    
-    vLLM uses PagedAttention. The OpenAI-compatible API does not expose
-    a direct cache-flush hook; the documented path is to set
-    `cache_salt` to a fresh value, which invalidates all previously
-    cached prefixes for the salt's scope. For tenant/tag-scoped flushes
-    we rotate per-scope salts kept in this adapter's memory.
-    """
-    body = await request.json()
-    scope = body.get('scope')
-    verified_op_token = body.get('verifiedOpToken')
-    
-    if not scope or not verified_op_token:
-        raise HTTPException(400, "scope and verifiedOpToken required")
-    
-    if scope not in ('all', 'model', 'tenant', 'tag'):
-        raise HTTPException(400, f"Unknown scope {scope!r}")
-    
-    # Rotate the appropriate cache_salt. The real implementation tracks
-    # active salts per (model, tenant, tag) and emits the rotation to
-    # downstream vLLM calls. Stub returns the contract envelope so the
-    # system component's polling logic completes.
-    entries = _rotate_cache_salt(scope, body)
-    
-    return {
-        "scope": scope,
-        "verified": True,
-        "entriesRemoved": entries,
-        "memoryFreedMB": 0,  # PagedAttention reclaims lazily
-    }
-
-
-def _approx_gpu_memory_mb() -> int:
-    """
-    Rough GPU memory snapshot. Production implementation would query
-    nvidia-smi or torch.cuda.memory_allocated(). For the stub we report
-    zero to avoid implying a measurement we did not take.
-    """
-    return 0
-
-
-_cache_salts: Dict[str, str] = {}
-
-
-def _rotate_cache_salt(scope: str, body: Dict[str, Any]) -> int:
-    """
-    Rotate the cache_salt for a given scope. Returns the number of
-    entries the rotation invalidates (best-effort; PagedAttention
-    doesn't expose an exact entry count).
-    """
-    key = scope
-    if scope == 'model':
-        key = f"model:{body.get('modelId', '')}"
-    elif scope == 'tenant':
-        key = f"tenant:{body.get('tenantId', '')}"
-    elif scope == 'tag':
-        key = f"tag:{body.get('tag', '')}"
-    
-    import secrets
-    _cache_salts[key] = secrets.token_hex(16)
-    return 0  # unknown
-
-
-# ============================================================================
 # CAPABILITIES & HEALTH (Spec §3)
 # ============================================================================
 
@@ -585,7 +431,7 @@ async def get_capabilities():
         "features": {
             "prefixCaching": ENABLE_PREFIX_CACHING,
             "streaming": False,
-            "hmacSigning": False
+            "hmacSigning": True
         },
         "queue": {
             "maxDepth": MAX_QUEUE_DEPTH,

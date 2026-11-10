@@ -3,6 +3,12 @@ set -euo pipefail
 
 # Safebox AMI Provisioning Script
 # Provisions AWS EC2 instance with Nitro Enclaves, encrypted RAM, and ZFS
+#
+# SUPERSEDED. This is the pre-hardening flow (SSH into a running VM, run an
+# installer, snapshot it). The 1.0 AMI is built by aws/scripts/build-image.sh
+# from a chroot and never captures a running instance; see aws/INSTRUCTIONS.md
+# and docs/HARDENING-PLAN.md. scripts/install.sh, which this script invoked,
+# has been moved to docs/future/install.sh.txt and is not runnable.
 
 ################################################################################
 # CONFIGURATION
@@ -323,7 +329,7 @@ install_infrastructure() {
         
         # Run install script
         cd /opt/safebox-infrastructure
-        sudo bash scripts/install.sh
+        echo 'scripts/install.sh was removed; build the AMI with aws/scripts/build-image.sh' >&2; exit 1
         
         echo "✓ Infrastructure installed"
 REMOTE_SCRIPT

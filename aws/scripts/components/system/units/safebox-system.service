@@ -1,59 +1,84 @@
 [Unit]
-Description=Safebox System Component (HMAC-authenticated JSON API over per-container Unix sockets)
+Description=Safebox System Component, operator instance (control socket only; starts one safebox-system@<tenant> per managed container)
 Documentation=file:///opt/safebox/manifests/system.json
-After=network-online.target docker.service zfs-mount.service
-Wants=network-online.target
+# The operator instance owns managed-containers.json, the container
+# lifecycle (/containers), models, volumes and succession. It serves the
+# control socket and nothing else: every per-container socket is served by
+# that tenant's own safebox-system@<name> instance under its own uid. This
+# process holds no master and no tenant key; its control-socket key is
+# derived for it by safebox-keyd. See docs/HARDENING-PLAN.md,
+# "Per-tenant isolation".
+After=network-online.target safebox-nftables.service docker.service zfs-mount.service var-lib-safebox.mount safebox-users.service safebox-keyd.service
+Wants=network-online.target safebox-nftables.service
+Requires=safebox-users.service safebox-keyd.service
+RequiresMountsFor=/var/lib/safebox /srv/safebox/tenants /srv/zfs-clones /srv/safebox/models
 
 [Service]
 Type=simple
 User=safebox-infra
 Group=safebox-infra
+# No supplementary groups. Not docker (root-equivalent, docs/HARDENING-PLAN.md
+# fix 5); not safebox-sys (the tenant instances' sudo identity); and not
+# safebox-app-ns any more, because the per-container key files are
+# group-readable by that gid and membership would hand this process every
+# tenant's key. The operator writes no key and no socket.
+SupplementaryGroups=
 
+# First boot: /var/lib/safebox is a fresh dataset. Seed managed-containers.json
+# from the image copy if the real one is absent. Runs as root ("+"). The
+# per-module state directories are 0750 safebox-infra. governance/ is 0751
+# and its registry 0644 because every tenant instance verifies governance
+# claims on its own /system route and must read the (public) signer keys.
+# tenant-config/ (0751 safebox-infra, files 0644) holds the one-entry copy
+# of each tenant's declaration that its instance reads; tenants/ (0751 root)
+# holds the instances' state directories, each owned by its instance uid.
+ExecStartPre=+/bin/sh -c 'install -d -m 0750 -o safebox-infra -g safebox-infra /var/lib/safebox/containers /var/lib/safebox/transparency /var/lib/safebox/volumes /var/lib/safebox/succession; install -d -m 0751 -o safebox-infra -g safebox-infra /var/lib/safebox/governance /var/lib/safebox/tenant-config; install -d -m 0751 -o root -g root /var/lib/safebox/tenants; if mountpoint -q /srv/safebox/tenants; then chown safebox-infra:safebox-app /srv/safebox/tenants && chmod 0750 /srv/safebox/tenants; fi; if [ ! -e /var/lib/safebox/managed-containers.json ] && [ -f /usr/lib/safebox/managed-containers.seed.json ]; then install -m 0640 -o safebox-infra -g safebox-infra /usr/lib/safebox/managed-containers.seed.json /var/lib/safebox/managed-containers.json; fi; if [ ! -e /var/lib/safebox/governance/governance-keys.json ] && [ -f /usr/lib/safebox/governance-keys.seed.json ]; then install -m 0644 -o safebox-infra -g safebox-infra /usr/lib/safebox/governance-keys.seed.json /var/lib/safebox/governance/governance-keys.json; fi; chmod 0644 /var/lib/safebox/governance/governance-keys.json 2>/dev/null || true'
+
+# No LoadCredential= here: the seed goes to safebox-keyd alone. The operator
+# key is /run/safebox/keys/_operator/control.hmac, 0400 safebox-infra.
+# Post-quantum TLS (docs/PQ-TLS.md).
+Environment=OPENSSL_CONF=/etc/ssl/openssl-pq.cnf
 ExecStart=/usr/bin/node /opt/safebox/system/server.js
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
 
-# Resource bounds
-# MemoryMax bumped from 512M to 4G because the embeddings worker subprocess
-# loads models (typically 100MB-2GB each) into the same cgroup. Default
-# embeddings budget is 2GB, so 4G gives headroom for several loaded models
-# plus the System component itself plus ONNX Runtime overhead.
-MemoryMax=4G
-TasksMax=400
+MemoryMax=1G
+TasksMax=200
 LimitNOFILE=4096
 
-# Runtime directory for sockets. systemd creates /run/safebox at start and
-# removes it at stop. safebox-infra owns it; the System component creates
-# subdirectories and socket files at runtime as needed.
-RuntimeDirectory=safebox safebox/containers
-RuntimeDirectoryMode=0750
-RuntimeDirectoryPreserve=no
-
 # Hardening — the system component itself is unprivileged. Privileged ops go via sudo
-# against an allowlist (see /etc/sudoers.d/safebox-system).
-NoNewPrivileges=false   # sudo needs to elevate; can't be no-new-privs
+# against the wrapper allowlist in /etc/sudoers.d/safebox-system (fixed paths,
+# no argument wildcards; the wrappers in /opt/safebox/bin validate every input).
+# sudo needs to elevate; cannot be no-new-privs. (systemd does not accept
+# trailing comments on a value line; keep these on their own lines.)
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictNamespaces=true
+RestrictNamespaces=mnt
 RestrictRealtime=true
-RestrictSUIDSGID=false  # sudo is setuid
+RestrictSUIDSGID=false
 SystemCallArchitectures=native
+SystemCallFilter=@system-service @mount
+SystemCallFilter=~@obsolete @debug @cpu-emulation @module @raw-io @reboot @swap @clock
 LockPersonality=true
-# AF_UNIX for our listeners; AF_INET/AF_INET6 still allowed so sudo'd children
-# (dnf, docker exec doing HTTPS downloads) can reach the network. We can
-# constrain further (drop AF_INET for the System component itself) once we
-# confirm none of our direct syscalls need TCP.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-CapabilityBoundingSet=
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_CHOWN CAP_FOWNER CAP_FSETID CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_KILL CAP_AUDIT_WRITE CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_RESOURCE
 AmbientCapabilities=
 
-ReadOnlyPaths=/opt/safebox/system /srv/safebox/models
-ReadWritePaths=/srv/zfs-clones /etc/safebox /run/safebox
+ReadOnlyPaths=/opt/safebox/system
+# /var/lib/safebox for its own state and managed-containers.json (the
+# tenants/<name> directories inside are owned by the instance uids and
+# unwritable to this uid regardless). /srv/safebox/models for opsModels.js.
+# /run/safebox for the control socket (0600 safebox-infra). The tenant key
+# directories under /run/safebox/keys are 0750 <instance uid>:safebox-app-ns
+# and this uid is in neither, so they are opaque to it. /srv/safebox/tenants
+# is not listed: the operator never writes into a tenant workspace.
+ReadWritePaths=/var/lib/safebox /srv/safebox/models /run/safebox -/var/log/sudo-io -/run/sudo
 
 StandardOutput=journal
 StandardError=journal

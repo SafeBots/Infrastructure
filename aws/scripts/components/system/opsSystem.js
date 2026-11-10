@@ -5,16 +5,37 @@
 //
 // Build the argv on this side, never construct a shell string. execFile
 // passes argv directly to the kernel; no shell interpretation.
+//
+// Privileged operations go through the root-owned wrappers in
+// /opt/safebox/bin (docs/HARDENING-PLAN.md, "Sudoers and wrappers"):
+//
+//   sudo /opt/safebox/bin/safebox-container exec <name> <tool> <args...>
+//   sudo /opt/safebox/bin/safebox-zfs snapshot|rollback <args...>
+//
+// The wrappers validate every argument and add `--` before pass-through
+// args themselves. dnf is not a tool any more: system packages change only
+// by image rotation, and the handler answers NOT_SUPPORTED.
+//
+// Nothing here runs code from a tenant workspace on the host. `migrate`
+// used to exec the workspace's migrate.sh as uid 990 on the host; it now
+// goes through the wrapper like every other per-app tool and runs inside
+// the tenant's own container (`safebox-container exec <name> migrate
+// <action>`), where the wrapper fixes the script path to
+// /workspace/migrate.sh. The workspace itself is never an input: it is
+// implied by the socket the request arrived on (managedContainer), and a
+// workspaceRoot field in the body is rejected unless it names exactly
+// /srv/safebox/tenants/<managedContainer>.
 
 'use strict';
 
 const { execFile } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-
 const config = require('./config');
 
-const WORKSPACE_PREFIX = process.env.SAFEBOX_SYSTEM_WORKSPACE_PREFIX || '/srv/encrypted/apps/';
+const WORKSPACE_PREFIX = process.env.SAFEBOX_SYSTEM_WORKSPACE_PREFIX || '/srv/safebox/tenants/';
+const SUDO = '/usr/bin/sudo';
+const CONTAINER_WRAPPER = '/opt/safebox/bin/safebox-container';
+const ZFS_WRAPPER = '/opt/safebox/bin/safebox-zfs';
+const NOT_SUPPORTED_MSG = 'System packages change only by image rotation; see docs/HARDENING-PLAN.md';
 const DEFAULT_TIMEOUT_MS = 1800 * 1000;
 const MAX_TIMEOUT_MS = 3600 * 1000;
 const STDOUT_CAP = 64 * 1024;
@@ -27,63 +48,56 @@ const STDERR_CAP = 16 * 1024;
 const TOOL_BUILDERS = {
     npm: (req, packages) => {
         const action = req.action;
-        if (action === 'install')  return ['/usr/local/bin/npm', ['install', '--save-exact', '--ignore-scripts', '--', ...packages]];
-        if (action === 'remove')   return ['/usr/local/bin/npm', ['uninstall', '--ignore-scripts', '--', ...packages]];
-        if (action === 'update')   return ['/usr/local/bin/npm', ['update', '--ignore-scripts', '--', ...packages]];
-        if (action === 'list')     return ['/usr/local/bin/npm', ['ls', '--json', '--depth=0']];
-        if (action === 'outdated') return ['/usr/local/bin/npm', ['outdated', '--json']];
+        if (action === 'install')  return ['npm', ['install', '--save-exact', '--ignore-scripts', '--', ...packages]];
+        if (action === 'remove')   return ['npm', ['uninstall', '--ignore-scripts', '--', ...packages]];
+        if (action === 'update')   return ['npm', ['update', '--ignore-scripts', '--', ...packages]];
+        if (action === 'list')     return ['npm', ['ls', '--json', '--depth=0']];
+        if (action === 'outdated') return ['npm', ['outdated', '--json']];
         return null;
     },
     pip: (req, packages) => {
         const action = req.action;
-        if (action === 'install')  return ['/usr/local/bin/pip', ['install', '--', ...packages]];
-        if (action === 'update')   return ['/usr/local/bin/pip', ['install', '--upgrade', '--', ...packages]];
-        if (action === 'remove')   return ['/usr/local/bin/pip', ['uninstall', '-y', '--', ...packages]];
-        if (action === 'list')     return ['/usr/local/bin/pip', ['list', '--format=json']];
-        if (action === 'outdated') return ['/usr/local/bin/pip', ['list', '--outdated', '--format=json']];
+        if (action === 'install')  return ['pip', ['install', '--', ...packages]];
+        if (action === 'update')   return ['pip', ['install', '--upgrade', '--', ...packages]];
+        if (action === 'remove')   return ['pip', ['uninstall', '-y', '--', ...packages]];
+        if (action === 'list')     return ['pip', ['list', '--format=json']];
+        if (action === 'outdated') return ['pip', ['list', '--outdated', '--format=json']];
         return null;
     },
     cargo: (req, packages) => {
         const action = req.action;
-        if (action === 'install')  return ['/usr/local/bin/cargo', ['add', '--', ...packages]];
-        if (action === 'remove')   return ['/usr/local/bin/cargo', ['remove', '--', ...packages]];
-        if (action === 'update')   return ['/usr/local/bin/cargo', ['update', '--', ...packages]];
-        if (action === 'list')     return ['/usr/local/bin/cargo', ['tree', '--depth', '1']];
-        if (action === 'outdated') return ['/usr/local/bin/cargo', ['outdated', '--format', 'json']];
+        if (action === 'install')  return ['cargo', ['add', '--', ...packages]];
+        if (action === 'remove')   return ['cargo', ['remove', '--', ...packages]];
+        if (action === 'update')   return ['cargo', ['update', '--', ...packages]];
+        if (action === 'list')     return ['cargo', ['tree', '--depth', '1']];
+        if (action === 'outdated') return ['cargo', ['outdated', '--format', 'json']];
         return null;
     },
     gem: (req, packages) => {
         const action = req.action;
-        if (action === 'install')  return ['/usr/local/bin/gem', ['install',   '--', ...packages]];
-        if (action === 'remove')   return ['/usr/local/bin/gem', ['uninstall', '--', ...packages]];
-        if (action === 'update')   return ['/usr/local/bin/gem', ['update',    '--', ...packages]];
-        if (action === 'list')     return ['/usr/local/bin/gem', ['list']];
-        if (action === 'outdated') return ['/usr/local/bin/gem', ['outdated']];
+        if (action === 'install')  return ['gem', ['install',   '--', ...packages]];
+        if (action === 'remove')   return ['gem', ['uninstall', '--', ...packages]];
+        if (action === 'update')   return ['gem', ['update',    '--', ...packages]];
+        if (action === 'list')     return ['gem', ['list']];
+        if (action === 'outdated') return ['gem', ['outdated']];
         return null;
     },
     composer: (req, packages) => {
         const action = req.action;
-        if (action === 'install')  return ['/usr/local/bin/composer', ['require',  '--no-scripts', '--no-interaction', '--', ...packages]];
-        if (action === 'remove')   return ['/usr/local/bin/composer', ['remove',   '--no-scripts', '--no-interaction', '--', ...packages]];
-        if (action === 'update')   return ['/usr/local/bin/composer', ['update',   '--no-scripts', '--no-interaction', '--', ...packages]];
-        if (action === 'list')     return ['/usr/local/bin/composer', ['show',     '--format=json']];
-        if (action === 'outdated') return ['/usr/local/bin/composer', ['outdated', '--format=json']];
+        if (action === 'install')  return ['composer', ['require',  '--no-scripts', '--no-interaction', '--', ...packages]];
+        if (action === 'remove')   return ['composer', ['remove',   '--no-scripts', '--no-interaction', '--', ...packages]];
+        if (action === 'update')   return ['composer', ['update',   '--no-scripts', '--no-interaction', '--', ...packages]];
+        if (action === 'list')     return ['composer', ['show',     '--format=json']];
+        if (action === 'outdated') return ['composer', ['outdated', '--format=json']];
         return null;
     },
-    dnf: (req, packages) => {
-        // Privileged: run via sudo. sudoers config restricts the exact form.
-        const action = req.action;
-        if (action === 'install')      return ['/usr/bin/sudo', ['/usr/bin/dnf', '-y', '--setopt=install_weak_deps=False', 'install', '--', ...packages]];
-        if (action === 'remove')       return ['/usr/bin/sudo', ['/usr/bin/dnf', '-y', 'remove', '--', ...packages]];
-        if (action === 'update')       return ['/usr/bin/sudo', ['/usr/bin/dnf', '-y', '--setopt=install_weak_deps=False', 'upgrade']];
-        if (action === 'list')         return ['/usr/bin/sudo', ['/usr/bin/dnf', 'list', 'installed']];
-        if (action === 'check-update') return ['/usr/bin/sudo', ['/usr/bin/dnf', 'check-update']];
-        return null;
-    },
+    dnf: () => null,  // NOT_SUPPORTED; handled before the builder runs
     git: (req) => {
         const action = req.action;
-        const cwd = req._resolvedWorkspace;
-        const base = ['/usr/bin/git', ['-C', cwd]];
+        // Inside the container the wrapper sets --workdir /workspace, so git
+        // runs in the workspace without -C. containerWorkdir is accepted for
+        // validation only (see sanitizeWorkdir) and must stay under /workspace.
+        const base = ['git', []];
         if (action === 'status')   { base[1].push('status', '--porcelain'); return base; }
         if (action === 'diff')     { base[1].push('diff', '--no-color');    return base; }
         if (action === 'log')      { base[1].push('log', '--oneline', '-n', '50'); return base; }
@@ -101,29 +115,29 @@ const TOOL_BUILDERS = {
             return base;
         }
         if (action === 'clone') {
-            // workspaceParent + url already validated; clone into ./clone
-            return ['/usr/bin/git', ['clone', '--depth', '1', '--', req.url, path.join(req._resolvedWorkspace, 'clone')]];
+            // url already validated; clone into ./clone under /workspace
+            return ['git', ['clone', '--depth', '1', '--', req.url, 'clone']];
         }
         return null;
     },
     migrate: (req) => {
-        // The workspace provides its own migrate.sh runner.
-        const cwd = req._resolvedWorkspace;
-        const runner = path.join(cwd, 'migrate.sh');
-        const args = ['bash', runner, req.action];
+        // Runs INSIDE the tenant's container through the wrapper, which maps
+        // the pseudo-tool `migrate` to `/bin/bash /workspace/migrate.sh
+        // <action> [target]`. The host never executes the script.
+        const args = [req.action];
         if (req.target) args.push(req.target);
-        return ['/usr/bin/env', args];
+        return ['migrate', args];
     },
     'zfs-snapshot': (req) => {
-        // Privileged: run via sudo. sudoers config restricts the exact form.
+        // Privileged: via the safebox-zfs wrapper, which pins the dataset to
+        // safebox-pool/(tenants|clones)/ and adds its own flags.
         const snap = `${req.dataset}@${req.snapshotName}`;
-        return ['/usr/bin/sudo', ['/usr/sbin/zfs', 'snapshot', '--', snap]];
+        return [SUDO, ['-n', ZFS_WRAPPER, 'snapshot', snap]];
     },
     'zfs-rollback': (req) => {
-        const args = ['/usr/sbin/zfs', 'rollback'];
-        if (req.force === true) args.push('-r');
-        args.push('--', req.snapshot);
-        return ['/usr/bin/sudo', args];
+        const args = ['-n', ZFS_WRAPPER, 'rollback', req.snapshot];
+        if (req.force === true) args.push('recursive');
+        return [SUDO, args];
     },
 };
 
@@ -149,25 +163,30 @@ const RE = {
     // dataset/snapshot use a segment-based check below (validateDataset). The
     // regex matches the rough shape; per-segment validation rejects '.', '..',
     // and empty segments.
-    dataset:     /^safebox-pool\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/,
-    snapshot:    /^safebox-pool\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*@[a-zA-Z0-9_.-]+$/,
-    snapshotName:/^[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,63}$/,
+    // The safebox-zfs wrapper's pattern, copied here so bad input is a 400
+    // rather than a wrapper refusal: safebox-pool/(tenants|clones)/<name>[@snap]
+    dataset:     /^safebox-pool\/(tenants|clones)\/[a-z0-9-]{1,40}$/,
+    snapshot:    /^safebox-pool\/(tenants|clones)\/[a-z0-9-]{1,40}@[a-z0-9-]{1,40}$/,
+    snapshotName:/^[a-z0-9-]{1,40}$/,
     migrateTarget:/^[a-zA-Z0-9._-]{1,256}$/,
-    // containerWorkdir: absolute path, no traversal, no shell metachars.
-    // 1-255 chars, must start with /, allowed chars [a-zA-Z0-9._/-]
-    containerWorkdir: /^\/[a-zA-Z0-9._/-]{0,254}$/,
+    // containerWorkdir: absolute path under /workspace, no traversal, no
+    // shell metachars. 1-255 chars, allowed chars [a-zA-Z0-9._/-]. The
+    // wrapper fixes --workdir /workspace; anything else is rejected here.
+    containerWorkdir: /^\/workspace(\/[a-zA-Z0-9._-]+)*\/?$/,
 };
 
 // Which tools are per-app (container-routed) vs host-scope.
-// dnf is the only host-scope tool today; the rest run inside the app container.
-// zfs-snapshot/zfs-rollback/migrate already build their own `sudo ...` argv —
-// they operate on host-side ZFS datasets and host-side schema runners, not
-// inside a container. We do NOT wrap them in `docker exec`.
-const HOST_NATIVE_TOOLS = new Set(['dnf', 'zfs-snapshot', 'zfs-rollback', 'migrate']);
-const CONTAINER_TOOLS   = new Set(['npm', 'pip', 'cargo', 'gem', 'composer', 'git']);
+// zfs-snapshot/zfs-rollback build their own argv — they operate on
+// host-side ZFS datasets (through the wrapper), not inside a container.
+// dnf is listed only so validateRequest routes it; handle() answers
+// NOT_SUPPORTED before it runs. migrate is container-routed: the wrapper
+// runs /workspace/migrate.sh inside the caller's container.
+const HOST_NATIVE_TOOLS = new Set(['dnf', 'zfs-snapshot', 'zfs-rollback']);
+const CONTAINER_TOOLS   = new Set(['npm', 'pip', 'cargo', 'gem', 'composer', 'git', 'migrate']);
+const MIGRATE_ACTIONS   = ['run', 'rollback', 'status'];
 
-// Default workdir inside the app container when none specified
-const DEFAULT_CONTAINER_WORKDIR = '/app';
+// The only workdir the wrapper runs tools in
+const DEFAULT_CONTAINER_WORKDIR = '/workspace';
 
 class BadRequest extends Error {
     constructor(message, code = 'BAD_REQUEST') { super(message); this.code = code; }
@@ -187,34 +206,38 @@ function sanitizeWorkdir(workdir) {
         throw new BadRequest('containerWorkdir length out of range');
     }
     if (!RE.containerWorkdir.test(workdir)) {
-        throw new BadRequest('containerWorkdir contains invalid characters');
+        throw new BadRequest('containerWorkdir must be /workspace or a path under it');
     }
     // Reject path traversal even though the regex would catch ".."
     // (defense in depth: belt-and-suspenders).
     if (workdir.includes('..')) {
         throw new BadRequest('containerWorkdir must not contain ".."');
     }
-    return workdir;
+    // The wrapper fixes --workdir /workspace. A sub-directory is accepted
+    // from callers for forward compatibility but cannot be honoured yet.
+    if (workdir.replace(/\/+$/, '') !== DEFAULT_CONTAINER_WORKDIR) {
+        throw new BadRequest('containerWorkdir other than /workspace is not supported', 'NOT_SUPPORTED');
+    }
+    return DEFAULT_CONTAINER_WORKDIR;
 }
 
-function resolveWorkspace(req) {
+// The workspace a per-container tool acts on is the caller's own, full
+// stop: /srv/safebox/tenants/<managedContainer>, which the wrapper mounts as
+// /workspace inside that container. The field is optional and purely
+// declarative; it is never resolved on the host (no realpath, no stat: a
+// tenant-controlled path must not steer host-side filesystem access), and
+// any value other than the caller's own canonical workspace is rejected.
+function expectedWorkspace(managedContainer) {
+    return WORKSPACE_PREFIX + managedContainer;
+}
+
+function checkWorkspaceRoot(req) {
     const ws = req.workspaceRoot;
-    if (typeof ws !== 'string' || !ws) throw new BadRequest('workspaceRoot is required');
-    let resolved;
-    try {
-        resolved = fs.realpathSync(ws);
-    } catch {
-        throw new BadRequest('workspaceRoot does not exist', 'WORKSPACE_NOT_FOUND');
+    if (ws === undefined || ws === null) return;
+    if (typeof ws !== 'string') throw new BadRequest('workspaceRoot must be a string');
+    if (ws.replace(/\/+$/, '') !== expectedWorkspace(req.managedContainer)) {
+        throw new BadRequest('workspaceRoot must be the caller\'s own workspace', 'FORBIDDEN_WORKSPACE');
     }
-    // Must be under the standard prefix OR be a declared zfsVolume for the container
-    if (resolved.startsWith(WORKSPACE_PREFIX)) return resolved;
-    const entry = config.get(req.managedContainer);
-    if (entry && entry.zfsVolumes) {
-        for (const v of Object.values(entry.zfsVolumes)) {
-            if (resolved.startsWith(v)) return resolved;
-        }
-    }
-    throw new BadRequest('workspaceRoot must be under an allowed prefix', 'WORKSPACE_NOT_FOUND');
 }
 
 function validatePackages(arr) {
@@ -240,14 +263,6 @@ function validateRequest(req) {
     if (!TOOL_BUILDERS[req.tool]) throw new BadRequest(`unknown tool: ${req.tool}`);
     if (!req.action || typeof req.action !== 'string') throw new BadRequest('action is required');
 
-    // System-wide actions can only be invoked by the _host pseudo-container.
-    // A SQL injection in safebox-app-X PHP code cannot trigger a dnf upgrade
-    // that affects every other tenant on the box, because the _host channel
-    // demands a different governance signature on the Safebox side.
-    if (req.tool === 'dnf' && req.managedContainer !== '_host') {
-        throw new BadRequest(`tool 'dnf' is host-wide and may only be invoked by managedContainer '_host'`, 'FORBIDDEN_ACTION');
-    }
-
     // Per-container-tool requests cannot target _host (it has no container)
     if (CONTAINER_TOOLS.has(req.tool) && entry.execContext === 'host') {
         throw new BadRequest(`tool '${req.tool}' is per-app and cannot run with execContext='host'`, 'FORBIDDEN_ACTION');
@@ -262,16 +277,10 @@ function validateRequest(req) {
         // Container-routed: validate containerWorkdir if present, default if not.
         // We do NOT resolve a host workspace; the work happens inside the container.
         req._containerWorkdir = sanitizeWorkdir(req.containerWorkdir);
-    }
-    if (tool === 'migrate') {
-        // migrate stays host-side: it runs the workspace's migrate.sh from the host.
-        req._resolvedWorkspace = resolveWorkspace(req);
+        checkWorkspaceRoot(req);
     }
     if (['npm','pip','cargo','gem','composer'].includes(tool)) {
         if (['install','remove','update'].includes(req.action)) validatePackages(req.packages);
-    }
-    if (tool === 'dnf') {
-        if (['install','remove'].includes(req.action)) validatePackages(req.packages);
     }
     if (tool === 'git') {
         if (req.action === 'checkout') {
@@ -286,8 +295,10 @@ function validateRequest(req) {
         }
     }
     if (tool === 'migrate') {
-        if (!['run','rollback','status'].includes(req.action)) throw new BadRequest('migrate action must be run|rollback|status');
-        if (req.target && !RE.migrateTarget.test(req.target)) throw new BadRequest('invalid migrate target');
+        if (!MIGRATE_ACTIONS.includes(req.action)) throw new BadRequest('migrate action must be run|rollback|status');
+        if (req.target !== undefined && req.target !== null) {
+            if (typeof req.target !== 'string' || !RE.migrateTarget.test(req.target)) throw new BadRequest('invalid migrate target');
+        }
     }
     if (tool === 'zfs-snapshot') {
         if (!req.dataset || !RE.dataset.test(req.dataset) || !validateDatasetSegments(req.dataset)) {
@@ -384,16 +395,18 @@ function verifyLockfileHash(entry, req) {
         return Promise.resolve({ status: 'error', code: 'NO_LOCKFILE_DEFINED',
             message: `tool '${req.tool}' has no lockfile to verify` });
     }
-    const fullPath = `${req._containerWorkdir}/${lockfilePath}`;
-    const dockerArgv = [
-        '/usr/bin/docker', 'exec',
-        '--user', entry.runUser,
-        '--workdir', req._containerWorkdir,
-        entry.containerName,
-        '/usr/bin/cat', '--', fullPath,
+    // Read the lockfile through the wrapper. The wrapper's tool list is
+    // npm/pip/cargo/gem/composer/git only, so the file is read with
+    // `git show :<path>` — which returns the INDEX copy. Callers that want
+    // the hash check must `git add` the lockfile first (the install/update
+    // flow does not stage it; the Safebox side runs git add before the
+    // verify step). An unstaged lockfile fails closed as LOCKFILE_READ_FAILED.
+    const wrapperArgv = [
+        '-n', CONTAINER_WRAPPER, 'exec', entry.containerName.replace(/^safebox-app-/, ''),
+        'git', 'show', ':' + lockfilePath,
     ];
     return new Promise((resolve) => {
-        execFile('/usr/bin/sudo', dockerArgv, {
+        execFile(SUDO, wrapperArgv, {
             timeout: 30000,
             killSignal: 'SIGKILL',
             maxBuffer: 16 * 1024 * 1024,  // lockfiles can be large
@@ -419,19 +432,25 @@ function verifyLockfileHash(entry, req) {
 //
 //   tool      | managedContainer | how it runs
 //   ----------|------------------|-----------------------------------------
-//   dnf       | _host (only)     | sudo dnf ...        (host-native)
-//   migrate   | any              | env bash migrate.sh (host-native, uses workspace)
-//   zfs-*     | any              | sudo zfs ...        (host-native)
-//   npm,pip,  | any non-_host    | sudo docker exec --user U --workdir W
-//   cargo,gem,                       <container> <tool> <args>
-//   composer,
-//   git
+//   dnf       | any              | NOT_SUPPORTED (image rotation only)
+//   zfs-*     | any              | sudo safebox-zfs ...        (wrapper)
+//   npm,pip,  | any non-_host    | sudo safebox-container exec <name> <tool> <args>
+//   cargo,gem,                       (wrapper runs docker exec --user safebox-app
+//   composer,                         --workdir /workspace safebox-app-<name> ...)
+//   git,
+//   migrate                          (wrapper runs /bin/bash /workspace/migrate.sh
+//                                     <action> inside the container)
 //
-// validateRequest has already rejected impossible combinations (dnf from
-// non-_host, container-tool with execContext='host', etc.) and stashed the
-// resolved entry as req._entry.
+// validateRequest has already rejected impossible combinations (container
+// tool with execContext='host', etc.) and stashed the resolved entry as
+// req._entry.
 
 async function handle(req) {
+    // dnf is refused outright, whatever the container or action: on a verity
+    // root there is nothing to install into.
+    if (req && typeof req === 'object' && req.tool === 'dnf') {
+        return { status: 'error', code: 'NOT_SUPPORTED', message: NOT_SUPPORTED_MSG };
+    }
     validateRequest(req);
 
     const builder = TOOL_BUILDERS[req.tool];
@@ -445,20 +464,22 @@ async function handle(req) {
     let bin, argv, cwd;
     if (HOST_NATIVE_TOOLS.has(req.tool)) {
         // Host-native tool: the builder already produced the right sudo argv
-        // (for dnf/zfs) or env-bash argv (for migrate). Pass through.
+        // (for zfs). Pass through.
         bin = toolBin;
         argv = toolArgv;
-        cwd = req._resolvedWorkspace || '/tmp';
+        cwd = '/tmp';
     } else if (CONTAINER_TOOLS.has(req.tool)) {
-        // Container-routed: wrap in `sudo docker exec --user U --workdir W <name> ...`
-        bin = '/usr/bin/sudo';
-        argv = [
-            '/usr/bin/docker', 'exec',
-            '--user',    entry.runUser,
-            '--workdir', req._containerWorkdir,
-            entry.containerName,
-            toolBin, ...toolArgv,
-        ];
+        // Container-routed: `sudo safebox-container exec <name> <tool> <args...>`.
+        // The wrapper adds `--user safebox-app --workdir /workspace`, maps
+        // <name> to docker container safebox-app-<name>, and inserts `--`
+        // before the args. The managed-container key is the name; strip a
+        // legacy safebox-app- prefix from containerName if one is declared.
+        const wrapperName = entry.containerName.replace(/^safebox-app-/, '');
+        if (!/^[a-z0-9-]{1,40}$/.test(wrapperName)) {
+            throw new BadRequest(`containerName '${entry.containerName}' is not a wrapper-valid name`, 'BAD_REQUEST');
+        }
+        bin = SUDO;
+        argv = ['-n', CONTAINER_WRAPPER, 'exec', wrapperName, toolBin, ...toolArgv];
         cwd = '/tmp';
     } else {
         // Shouldn't reach here — validateRequest would have rejected.
@@ -474,11 +495,6 @@ async function handle(req) {
     }
 
     const result = await run(bin, argv, cwd, timeoutMs);
-
-    // dnf check-update returns 100 to mean "updates available" — not failure
-    if (req.tool === 'dnf' && req.action === 'check-update' && result.returncode === 100) {
-        result.returncode = 0;
-    }
 
     if (result.timedOut) {
         return { status: 'error', code: 'TIMEOUT', message: `tool exceeded ${timeoutMs/1000}s` };
@@ -519,8 +535,12 @@ module.exports = {
     // exposed for tests
     _sanitizeWorkdir: sanitizeWorkdir,
     _validateRequest: validateRequest,
+    _checkWorkspaceRoot: checkWorkspaceRoot,
+    _TOOL_BUILDERS: TOOL_BUILDERS,
+    _MIGRATE_ACTIONS: MIGRATE_ACTIONS,
     _HOST_NATIVE_TOOLS: HOST_NATIVE_TOOLS,
     _CONTAINER_TOOLS: CONTAINER_TOOLS,
     _LOCKFILE_BY_TOOL: LOCKFILE_BY_TOOL,
     _verifyLockfileHash: verifyLockfileHash,
+    NOT_SUPPORTED_MSG,
 };

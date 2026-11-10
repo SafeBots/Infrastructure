@@ -55,12 +55,36 @@ if ! zfs list "$MYSQL_DATA_DATASET" &>/dev/null; then
 fi
 
 # Step 1: Flush and lock MySQL tables
-log "Flushing MySQL tables..."
-docker exec "$MYSQL_CONTAINER" mysql -e "FLUSH TABLES WITH READ LOCK; SYSTEM sleep 2" &
+# We hold the lock through a background mysql session and use a named pipe
+# to confirm the lock is acquired before taking snapshots — no fragile sleep.
+LOCK_FIFO=$(mktemp -u /tmp/backup-lock-XXXXXX)
+mkfifo "$LOCK_FIFO"
+trap 'rm -f "$LOCK_FIFO"' EXIT
+
+log "Acquiring FLUSH TABLES WITH READ LOCK..."
+
+(
+    docker exec -i "$MYSQL_CONTAINER" mysql -NB <<'EOSQL'
+FLUSH TABLES WITH READ LOCK;
+SELECT 'LOCKED';
+SYSTEM sleep 30
+UNLOCK TABLES;
+EOSQL
+) > "$LOCK_FIFO" &
 MYSQL_PID=$!
 
-# Give MySQL time to flush
-sleep 1
+# Wait for "LOCKED" with a 60-second timeout
+LOCK_CONFIRMED=""
+if read -t 60 LOCK_CONFIRMED < "$LOCK_FIFO"; then
+    if [ "$LOCK_CONFIRMED" != "LOCKED" ]; then
+        kill "$MYSQL_PID" 2>/dev/null || true
+        error "Unexpected FTWRL response: $LOCK_CONFIRMED"
+    fi
+    log "✓ Tables flushed and locked"
+else
+    kill "$MYSQL_PID" 2>/dev/null || true
+    error "Timed out waiting for FLUSH TABLES WITH READ LOCK (60s)"
+fi
 
 # Step 2: Create ZFS snapshots (while tables are locked)
 log "Creating ZFS snapshots..."
@@ -81,10 +105,10 @@ else
     error "Failed to create MySQL snapshot"
 fi
 
-# Step 3: Unlock MySQL tables
-log "Unlocking MySQL tables..."
-docker exec "$MYSQL_CONTAINER" mysql -e "UNLOCK TABLES" || true
-wait $MYSQL_PID || true
+# Step 3: Release lock (kill the background session holding FTWRL)
+log "Releasing lock..."
+kill "$MYSQL_PID" 2>/dev/null || true
+wait "$MYSQL_PID" 2>/dev/null || true
 
 log "✓ Backup snapshots created"
 

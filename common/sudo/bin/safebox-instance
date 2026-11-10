@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# SECURITY: root wrapper invoked via sudo by the operator instance
+# (safebox-infra, uid 990). Starts or stops one tenant instance of the
+# system component, safebox-system@<name>.service. Exactly two inputs:
+#
+#   argv[1]  start | stop
+#   argv[2]  name     ^[a-z0-9-]{1,40}$  (a declared managed container)
+#
+# start: creates the instance user safebox-sys-<name> and its state
+#        directory if they are missing (by running safebox-users.sh, which
+#        reads managed-containers.json and nothing from this caller), creates
+#        the tenant workspace dataset safebox-pool/tenants/<name> with fixed
+#        options if it does not exist (the unit's ReadWritePaths names it),
+#        starts the unit, and waits up to 15 seconds for the instance's
+#        socket /run/safebox/containers/<name>.sock to appear so the operator
+#        can follow with safebox-container create.
+# stop:  stops the unit. The socket goes with it; the key files on tmpfs are
+#        safebox-keyd's and are removed on its next reload once the
+#        declaration is gone.
+#
+# The unit name is built here from a fixed template; a caller cannot name
+# any other unit. See docs/HARDENING-PLAN.md, "Per-tenant isolation".
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly RE_NAME='^[a-z0-9-]{1,40}$'
+readonly SOCKETS=/run/safebox/containers
+readonly TENANTS=/srv/safebox/tenants
+readonly TENANTS_DS=safebox-pool/tenants
+readonly CONFIG=/var/lib/safebox/managed-containers.json
+readonly USERS=/opt/safebox/keyd/safebox-users.sh
+readonly WAIT_S=15
+
+die() { printf 'safebox-instance: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=./safebox-caller.sh
+. /opt/safebox/bin/safebox-caller.sh
+
+[[ $# -eq 2 ]] || die "usage: safebox-instance <start|stop> <name>"
+for a in "$@"; do
+    [[ $a == -* ]] && die "argument may not start with '-'"
+done
+require_operator
+action=$1 name=$2
+[[ $name =~ $RE_NAME ]] || die "invalid name"
+unit="safebox-system@$name.service"
+
+case $action in
+    start)
+        # The instance must be declared: its uid comes from the file, not
+        # from here. node is the JSON parser the image has.
+        [[ -f $CONFIG ]] || die "$CONFIG missing"
+        node -e '
+            const cfg = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const e = cfg[process.argv[2]];
+            process.exit(e && typeof e === "object" && Number.isInteger(e.instanceUid) ? 0 : 1);
+        ' "$CONFIG" "$name" || die "'$name' is not a declared managed container with an instanceUid"
+        "$USERS" >/dev/null || die "safebox-users.sh failed"
+        getent passwd "safebox-sys-$name" >/dev/null || die "user safebox-sys-$name was not created"
+        if ! zfs list -H -o name -- "$TENANTS_DS/$name" >/dev/null 2>&1; then
+            zfs create -o "mountpoint=$TENANTS/$name" -o setuid=off -o devices=off \
+                -- "$TENANTS_DS/$name" || die "could not create dataset $TENANTS_DS/$name"
+        fi
+        [[ -d "$TENANTS/$name" && ! -L "$TENANTS/$name" ]] || die "$TENANTS/$name is not a directory"
+        systemctl start -- "$unit" || die "systemctl start $unit failed"
+        i=0
+        until [[ -S "$SOCKETS/$name.sock" ]]; do
+            (( i++ < WAIT_S * 2 )) || die "$SOCKETS/$name.sock did not appear within ${WAIT_S}s"
+            sleep 0.5
+        done
+        printf 'safebox-instance: %s running, socket %s\n' "$unit" "$SOCKETS/$name.sock"
+        ;;
+    stop)
+        exec systemctl stop -- "$unit"
+        ;;
+    *)
+        die "action must be start or stop"
+        ;;
+esac

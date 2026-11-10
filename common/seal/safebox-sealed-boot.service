@@ -1,0 +1,97 @@
+# safebox-sealed-boot.service — Production hardening for sealed Safebox images.
+#
+# This unit runs once at boot, AFTER all filesystems, modules and services
+# have started. It checks for /etc/safebox/sealed; if the flag is absent
+# (audit AMI), it exits silently and does nothing.
+#
+# On a sealed (production) box it applies three hardening steps:
+#
+#   1. SSH masking — stops and masks SSH units, removes SSH binaries and
+#      config from the tmpfs overlay. The files still exist on the read-only
+#      dm-verity root underneath but are invisible to userspace because the
+#      overlay whiteouts take precedence. This means Image A and Image B
+#      share the same root partition content; the only on-disk difference
+#      is the sealed flag file.
+#
+#   2. kernel.modules_disabled=1 — prevents loading any new kernel module
+#      for the rest of this boot. Because it runs After=multi-user.target,
+#      every module Docker, ZFS, nftables etc. need is already loaded.
+#
+#   3. hidepid=2 on /proc — each process can see only its own entries in
+#      /proc, preventing information leakage between UIDs.
+#
+# Steps 2 and 3 cannot be undone without a reboot, which on a dm-verity
+# root returns the box to its original state. Step 1 is effective because
+# the overlay is tmpfs — a reboot discards it and the dm-verity root
+# supplies the original files again (but the sealed flag triggers this
+# service again on every boot).
+
+[Unit]
+Description=Safebox sealed-image production hardening
+# Run after everything else has started so all modules are loaded.
+After=multi-user.target docker.service safebox-nftables.service zfs.target
+# Don't block boot if this fails — the box is still usable, just not
+# maximally hardened. Failure is logged and visible in the TPM quote.
+FailureAction=none
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+ExecStart=/bin/bash -euc '\
+    if [ ! -f /etc/safebox/sealed ]; then \
+        echo "safebox-sealed-boot: not sealed, skipping production hardening"; \
+        exit 0; \
+    fi; \
+    echo "safebox-sealed-boot: sealed image detected, applying production hardening"; \
+    \
+    # ── Step 1: Mask SSH in the overlay ─────────────────────────────── \
+    # The root filesystem is dm-verity (read-only). Writes land on the \
+    # tmpfs overlay (systemd.volatile=overlay). Removing files here     \
+    # creates overlay whiteouts — the kernel returns ENOENT even though \
+    # the file exists on the lower (verity) layer.                      \
+    echo "safebox-sealed-boot: masking SSH in overlay"; \
+    \
+    # Stop SSH if it somehow started before us (belt-and-suspenders).   \
+    systemctl stop ssh.service ssh.socket sshd.service 2>/dev/null || true; \
+    \
+    # Mask the units so they cannot be started for the rest of this     \
+    # boot. systemctl mask creates a symlink to /dev/null in the        \
+    # overlay — the real unit files on the verity root are untouched.   \
+    systemctl mask ssh.service ssh.socket sshd.service 2>/dev/null || true; \
+    \
+    # Remove SSH binaries from the overlay. This creates whiteout       \
+    # entries in the upper layer of the overlay mount, hiding the       \
+    # verity-root copies from all userspace processes.                  \
+    rm -f /usr/sbin/sshd /usr/bin/ssh /usr/bin/scp \
+          /usr/bin/sftp /usr/bin/ssh-keygen /usr/bin/ssh-add \
+          /usr/bin/ssh-agent /usr/bin/ssh-keyscan 2>/dev/null || true; \
+    \
+    # Remove SSH config directory and PAM config.                       \
+    rm -rf /etc/ssh 2>/dev/null || true; \
+    rm -f /etc/pam.d/sshd 2>/dev/null || true; \
+    \
+    # Remove the safebox-audit user home directory from the overlay.    \
+    rm -rf /home/safebox-audit 2>/dev/null || true; \
+    \
+    echo "safebox-sealed-boot: SSH masked in overlay"; \
+    \
+    # ── Step 2: Lock down kernel modules ────────────────────────────── \
+    echo "safebox-sealed-boot: setting kernel.modules_disabled=1"; \
+    sysctl -w kernel.modules_disabled=1; \
+    \
+    # ── Step 3: Process isolation ───────────────────────────────────── \
+    echo "safebox-sealed-boot: remounting /proc with hidepid=2"; \
+    mount -o remount,hidepid=2 /proc; \
+    \
+    echo "safebox-sealed-boot: production hardening complete"'
+
+# Minimal privileges: sysctl and mount -o remount need these.
+AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

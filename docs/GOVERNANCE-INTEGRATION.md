@@ -310,7 +310,7 @@ For Safebox team to implement:
 | File | Owner | Purpose |
 |------|-------|---------|
 | `/etc/safebox/system-registry.json` | Safebox | Approved dependency versions + hashes |
-| `/etc/safebox/managed-containers.json` | Operator | Container allowlist (can be moved to registry) |
+| `/var/lib/safebox/managed-containers.json` | Operator | Container allowlist (can be moved to registry) |
 
 ## Migration Path
 

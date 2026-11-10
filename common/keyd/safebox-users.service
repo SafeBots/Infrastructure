@@ -1,0 +1,32 @@
+[Unit]
+Description=Safebox per-tenant instance users (recreated every boot; /etc is a tmpfs overlay)
+Documentation=file:///opt/safebox/manifests/system.json
+After=var-lib-safebox.mount
+Before=safebox-keyd.service safebox-system.service
+RequiresMountsFor=/var/lib/safebox
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+ExecStart=/opt/safebox/keyd/safebox-users.sh
+# useradd rewrites /etc/passwd, /etc/shadow and /etc/group on the overlay.
+ProtectSystem=full
+ReadWritePaths=/etc /var/lib/safebox/tenants
+ProtectHome=true
+PrivateTmp=true
+PrivateNetwork=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_FSETID
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=safebox-users
+
+[Install]
+WantedBy=multi-user.target

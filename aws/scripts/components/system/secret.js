@@ -1,119 +1,86 @@
 // /opt/safebox/system/secret.js
 //
-// Loads the shared HMAC secret. Three sources, in order of preference:
+// Key loading for the two roles the system component runs in. Neither
+// role sees the HMAC seed or the master: both live in safebox-keyd
+// (common/keyd/safebox-keyd.js, root), which derives one key per tenant and
+// one for the operator and writes them to tmpfs. This module reads the one
+// file its own role is allowed to open and nothing else.
 //
-//   1. Existing on-disk key at /etc/safebox/system.hmac, if present and
-//      32 bytes. Both processes (Safebox Node and the System component) check this
-//      first so that on warm restarts neither process touches NSM.
+//   Tenant instance (SAFEBOX_TENANT=<name>, uid safebox-sys-<name>):
+//     /run/safebox/keys/<name>/instance.hmac — 32 bytes, 0400, owned by
+//     this uid. It is the per-container key the container also holds (as
+//     system.hmac, group-readable by the mapped app gid), so the instance
+//     verifies the container's requests with it. Every other tenant's
+//     directory is 0750 under another uid and unreadable here.
 //
-//   2. Derived from a verified Nitro attestation document. The deterministic
-//      derivation function (attestationDerive) is COPIED VERBATIM from
-//      Safebox's classes/Safebox/Protocol/System.js — see banner below.
-//      Both processes derive the same 32 bytes from the same attestation
-//      payload, then race to write the file with O_EXCL. Whoever wins,
-//      writes; whoever loses, re-reads bit-identical bytes.
+//   Operator instance (no SAFEBOX_TENANT, uid safebox-infra):
+//     /run/safebox/keys/_operator/control.hmac — 32 bytes, 0400, owned by
+//     uid 990. Authenticates the control socket. The operator holds no
+//     tenant key.
 //
-//   3. Random 32 bytes for non-Nitro hosts (dev environments). Logged
-//      loudly so operators notice. NOT bound to host attestation; do not
-//      use in production.
+// The derivations, for the record (they happen in keyd, and the test
+// helpers below reproduce them so a test can predict a key from a seed):
 //
-// The Safebox NSM client and the verification chain (COSE_Sign1 signature
-// against aws.nitro-enclaves-root-G1.pem, certificate chain validation,
-// CBOR decode) live in nsmClient.js. attestationDerive only sees a
-// verified payload.
+//   master   = HKDF-SHA256(ikm = seed, salt = 32 zero bytes,
+//                          info = "safebox-gateway-hmac-v2", L = 32)
+//   tenant   = HKDF-SHA256(ikm = master, salt = bytes(keyEpoch),
+//                          info = "safebox-container-<name>-v1", L = 32)
+//   operator = HKDF-SHA256(ikm = master, salt = 32 zero bytes,
+//                          info = "safebox-operator-control-v1", L = 32)
+//
+// Any deviation from the contract (missing file, wrong size, wrong mode,
+// wrong owner) is a refusal to start: there is no on-disk key, no
+// attestation-derived key and no random key. A missing tenant key is
+// retried for a few seconds first, because keyd writes it on the SIGHUP
+// the operator sends just before starting the instance.
+//
+// Test override: when NODE_ENV=test, SAFEBOX_SYSTEM_SECRET may name a seed
+// file; the operator key is then derived from it in-process (so tests need
+// no keyd), SAFEBOX_SYSTEM_KEYS_DIR relocates the key directory, and the
+// owner/mode checks are skipped. All of it is ignored in every other
+// NODE_ENV so a stray environment variable cannot redirect a production box
+// to an attacker-chosen key.
 
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 
-const SECRET_PATH = process.env.SAFEBOX_SYSTEM_SECRET || '/etc/safebox/system.hmac';
+const LEGACY_SEED_PATH = '/run/safebox/hmac-seed';
+const CREDENTIAL_NAME = 'hmac-seed';
 const KEY_BYTES = 32;
+const IS_TEST = process.env.NODE_ENV === 'test';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BEGIN VERBATIM COPY — DO NOT EDIT
-//
-// Source of truth: Safebox repo, classes/Safebox/Protocol/System.js
-// Any change here MUST be coordinated with the Safebox-side copy or the two
-// processes will derive silently different keys and authentication breaks.
-// Test vector (must match on both sides):
-//   PCR0 = 0xaa × 48,  PCR1 = 0xbb × 48,  PCR4 = 0xcc × 48
-//   → ac39caf5fadb5c00cfee415f7de54007aeb3a86c8b5c1315dd86d537fdb036eb
-// ─────────────────────────────────────────────────────────────────────────────
+const TENANT = process.env.SAFEBOX_TENANT || null;
+const TENANT_NAME_RE = /^[a-z0-9-]{1,40}$/;
+if (TENANT !== null && !TENANT_NAME_RE.test(TENANT)) {
+    throw new Error(`[system] SAFEBOX_TENANT '${TENANT}' is not a valid tenant name`);
+}
 
-/**
- * Derive the 32-byte HMAC secret from a verified Nitro attestation
- * document. Pure function: given the same `verifiedPayload`, returns
- * exactly the same 32 bytes on both Safebox Node and the System component.
- *
- * @param {object} verifiedPayload   The CBOR-decoded payload of a Nitro
- *                                   attestation document, AFTER the COSE_Sign1
- *                                   signature has been verified against the
- *                                   AWS Nitro Enclaves root certificate.
- * @return {Buffer}  32 bytes
- * @throws {Error}   if any required PCR is missing or has unexpected size
- */
-function attestationDerive(verifiedPayload) {
-    // The PCR set we bind to. Chosen for:
-    //   PCR0 — Enclave image file. Changes when the AMI is rebuilt.
-    //   PCR1 — Linux kernel + bootstrap. Changes on kernel updates.
-    //   PCR4 — Parent EC2 instance ID. Changes when moved to a
-    //          different EC2 instance, defeating disk-image-copy attacks.
-    // PCR2 (application) is DELIBERATELY EXCLUDED so that redeploying the
-    // Safebox application doesn't rotate the HMAC. Operators can force
-    // rotation by deleting the secret file; both processes will re-derive
-    // from a fresh attestation on next request.
-    var PCR_INDICES = [0, 1, 4];
+const SOCKET_DIR = process.env.SAFEBOX_SYSTEM_SOCKET_DIR || '/run/safebox';
+const KEYS_DIR = process.env.SAFEBOX_SYSTEM_KEYS_DIR || path.join(SOCKET_DIR, 'keys');
+const OPERATOR_KEY_PATH = path.join(KEYS_DIR, '_operator', 'control.hmac');
+const INSTANCE_KEY_FILENAME = 'instance.hmac';
+const TENANT_KEY_WAIT_MS = 10000;
 
-    function getPcr(idx) {
-        if (!verifiedPayload || !verifiedPayload.pcrs) {
-            throw new Error('attestationDerive: verifiedPayload.pcrs missing');
-        }
-        var pcrs = verifiedPayload.pcrs;
-        var v = (typeof pcrs.get === 'function')
-            ? pcrs.get(idx)
-            : (pcrs[idx] !== undefined ? pcrs[idx] : pcrs[String(idx)]);
-        if (!v) {
-            throw new Error('attestationDerive: PCR' + idx + ' missing from verified payload');
-        }
-        if (Buffer.isBuffer(v)) return v;
-        if (v instanceof Uint8Array) return Buffer.from(v);
-        if (typeof v === 'string') return Buffer.from(v, 'hex');
-        throw new Error('attestationDerive: PCR' + idx + ' has unexpected type ' + typeof v);
-    }
+const MASTER_INFO = Buffer.from('safebox-gateway-hmac-v2', 'utf8');
+const OPERATOR_INFO = Buffer.from('safebox-operator-control-v1', 'utf8');
+const ZERO_SALT = Buffer.alloc(32);
 
-    var chunks = [];
-    for (var i = 0; i < PCR_INDICES.length; i++) {
-        var idx = PCR_INDICES[i];
-        var pcrBytes = getPcr(idx);
-        if (pcrBytes.length === 0 || pcrBytes.length > 65535) {
-            throw new Error('attestationDerive: PCR' + idx + ' has invalid length '
-                + pcrBytes.length);
-        }
-        var header = Buffer.alloc(3);
-        header.writeUInt8(idx, 0);
-        header.writeUInt16BE(pcrBytes.length, 1);
-        chunks.push(header);
-        chunks.push(pcrBytes);
-    }
-    var ikm = Buffer.concat(chunks);
-
-    var SALT = Buffer.alloc(32);  // 32 zero bytes
-    var INFO = Buffer.from('safebox-gateway-hmac-v1', 'utf8');
-    var L    = 32;
-
+// RFC 5869 HKDF-SHA256. Node >= 15 has crypto.hkdfSync; keep the manual
+// expansion so the function is self-contained for older runtimes.
+function hkdfSha256(ikm, salt, info, L) {
     if (typeof crypto.hkdfSync === 'function') {
-        return Buffer.from(crypto.hkdfSync('sha256', ikm, SALT, INFO, L));
+        return Buffer.from(crypto.hkdfSync('sha256', ikm, salt, info, L));
     }
-
-    // RFC 5869 fallback for Node < 15.0
-    var prk = crypto.createHmac('sha256', SALT).update(ikm).digest();
+    var prk = crypto.createHmac('sha256', salt).update(ikm).digest();
     var out = Buffer.alloc(0);
     var t = Buffer.alloc(0);
     var counter = 1;
     while (out.length < L) {
         t = crypto.createHmac('sha256', prk)
-            .update(Buffer.concat([t, INFO, Buffer.from([counter])]))
+            .update(Buffer.concat([t, info, Buffer.from([counter])]))
             .digest();
         out = Buffer.concat([out, t]);
         counter++;
@@ -121,125 +88,123 @@ function attestationDerive(verifiedPayload) {
     return out.slice(0, L);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// END VERBATIM COPY
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Key-file reader shared by both roles ─────────────────────────────────────
 
-function readExisting() {
+function readKeyFile(p, what) {
+    let st;
     try {
-        const buf = fs.readFileSync(SECRET_PATH);
-        if (buf.length === KEY_BYTES) return buf;
-        console.warn(`[system] WARN ${SECRET_PATH} has wrong length ${buf.length} (expected ${KEY_BYTES}); will re-derive`);
-        return null;
+        st = fs.lstatSync(p);
     } catch (e) {
-        if (e.code !== 'ENOENT') {
-            console.warn(`[system] WARN reading ${SECRET_PATH}: ${e.message}`);
-        }
-        return null;
+        const err = new Error(`[system] ${what} missing at ${p} (${e.code}); is safebox-keyd running and reloaded? Refusing to start.`);
+        err.code = e.code;
+        throw err;
     }
+    if (!st.isFile()) throw new Error(`[system] ${what} ${p} is not a regular file. Refusing to start.`);
+    if (st.size !== KEY_BYTES) throw new Error(`[system] ${what} ${p} has size ${st.size}, expected ${KEY_BYTES}. Refusing to start.`);
+    if (!IS_TEST) {
+        const mode = st.mode & 0o777;
+        if (mode !== 0o400) throw new Error(`[system] ${what} ${p} has mode 0${mode.toString(8)}, expected 0400. Refusing to start.`);
+        const uid = (typeof process.getuid === 'function') ? process.getuid() : -1;
+        if (st.uid !== uid) throw new Error(`[system] ${what} ${p} is owned by uid ${st.uid}, expected ${uid}. Refusing to start.`);
+    }
+    const buf = fs.readFileSync(p);
+    if (buf.length !== KEY_BYTES) throw new Error(`[system] ${what} ${p} read ${buf.length} bytes, expected ${KEY_BYTES}. Refusing to start.`);
+    return buf;
 }
 
-// Write with O_EXCL. If another process won the race, fall through to
-// re-reading what they wrote. Both processes derive deterministically from
-// the same attestation, so what's on disk equals what we would have written.
-function writeSecretExclusive(buf) {
-    try {
-        fs.writeFileSync(SECRET_PATH, buf, { mode: 0o640, flag: 'wx' });
-        return { wrote: true };
-    } catch (e) {
-        if (e.code === 'EEXIST') return { wrote: false, raced: true };
-        throw e;
-    }
+// ── Test-only seed path (reproduces keyd's derivation in-process) ────────────
+
+function resolveSeedPath() {
+    if (IS_TEST && process.env.SAFEBOX_SYSTEM_SECRET) return process.env.SAFEBOX_SYSTEM_SECRET;
+    const credDir = process.env.CREDENTIALS_DIRECTORY;
+    if (typeof credDir === 'string' && credDir.length > 0) return path.join(credDir, CREDENTIAL_NAME);
+    if (IS_TEST) return LEGACY_SEED_PATH;
+    return null;
 }
 
-async function load() {
-    // 1. Existing on-disk key (warm restart path)
-    const existing = readExisting();
-    if (existing) {
-        console.log('[system] secret: loaded from /etc/safebox/system.hmac');
-        return existing;
-    }
+const SEED_PATH = resolveSeedPath();
 
-    // 2. Derive from Nitro attestation
-    let nsmClient = null;
-    try {
-        nsmClient = require('./nsmClient');
-    } catch (e) {
-        console.warn(`[system] WARN nsmClient not loadable: ${e.message}`);
+// Kept for tests and for keyd's reference derivation; server.js never calls
+// it. Outside NODE_ENV=test no unit hands this process a credential, so it
+// fails with a message naming keyd as the holder.
+function readSeed() {
+    if (SEED_PATH === null) {
+        throw new Error('[system] no seed: the HMAC seed is consumed by safebox-keyd.service alone, ' +
+            'the system component reads only its own derived key from /run/safebox/keys.');
     }
+    return readKeyFile(SEED_PATH, 'HMAC seed');
+}
 
-    if (nsmClient) {
+function deriveMaster(seed) {
+    if (!Buffer.isBuffer(seed) || seed.length !== KEY_BYTES) {
+        throw new Error('deriveMaster: seed must be a 32-byte Buffer');
+    }
+    return hkdfSha256(seed, ZERO_SALT, MASTER_INFO, KEY_BYTES);
+}
+
+function deriveOperatorKey(master) {
+    if (!Buffer.isBuffer(master) || master.length !== KEY_BYTES) {
+        throw new Error('deriveOperatorKey: master must be a 32-byte Buffer');
+    }
+    return hkdfSha256(master, ZERO_SALT, OPERATOR_INFO, KEY_BYTES);
+}
+
+// ── Role loaders ─────────────────────────────────────────────────────────────
+
+function tenantKeyPath(name) {
+    return path.join(KEYS_DIR, name, INSTANCE_KEY_FILENAME);
+}
+
+async function loadTenantKey(name) {
+    if (typeof name !== 'string' || !TENANT_NAME_RE.test(name)) {
+        throw new Error('loadTenantKey: invalid tenant name');
+    }
+    const p = tenantKeyPath(name);
+    const deadline = Date.now() + TENANT_KEY_WAIT_MS;
+    for (;;) {
         try {
-            const verifiedPayload = nsmClient.getVerifiedAttestationSync();
-            const derived = attestationDerive(verifiedPayload);
-            const result = writeSecretExclusive(derived);
-            if (result.wrote) {
-                console.log('[system] secret: derived from Nitro attestation, wrote to disk');
-                return derived;
-            } else {
-                // Race lost — re-read. Bit-identical because derivation is deterministic.
-                const reread = readExisting();
-                if (reread && reread.equals(derived)) {
-                    console.log('[system] secret: derived from Nitro attestation; lost write race, re-read identical bytes');
-                    return reread;
-                }
-                throw new Error('secret on disk does not match derived value after race; refuse to start');
-            }
+            const key = readKeyFile(p, `tenant key for '${name}'`);
+            console.log(`[system] secret: tenant key for '${name}' loaded from ${p}`);
+            return key;
         } catch (e) {
-            console.warn(`[system] WARN NSM attestation derivation failed: ${e.message}`);
-            // Fall through to random for non-Nitro environments
+            if (e.code !== 'ENOENT' || Date.now() >= deadline) throw e;
+            await new Promise((r) => setTimeout(r, 250));
         }
     }
+}
 
-    // 3. Random fallback (dev / non-Nitro)
-    console.warn('[system] WARN no on-disk key and no Nitro NSM available');
-    console.warn('[system] WARN generating random 32 bytes — NOT bound to host attestation; dev mode only');
-    const rand = crypto.randomBytes(KEY_BYTES);
-    const result = writeSecretExclusive(rand);
-    if (result.wrote) return rand;
-    // Race lost in the random path means another process generated its OWN random
-    // bytes — keys won't match. Re-read and trust the file (they got there first).
-    const reread = readExisting();
-    if (reread) {
-        console.warn('[system] WARN lost random-key write race; using bytes written by other process');
-        return reread;
+async function loadOperatorKey() {
+    if (IS_TEST && process.env.SAFEBOX_SYSTEM_SECRET) {
+        const seed = readSeed();
+        const master = deriveMaster(seed);
+        seed.fill(0);
+        const key = deriveOperatorKey(master);
+        master.fill(0);
+        console.log(`[system] secret: operator key derived from test seed ${SEED_PATH}`);
+        return key;
     }
-    throw new Error('could not write or re-read secret file');
+    const key = readKeyFile(OPERATOR_KEY_PATH, 'operator key');
+    console.log(`[system] secret: operator key loaded from ${OPERATOR_KEY_PATH}`);
+    return key;
+}
+
+// Loads whichever key this process's role needs.
+async function load() {
+    return TENANT ? loadTenantKey(TENANT) : loadOperatorKey();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-container key derivation
+// Per-container key derivation — the reference the Safebox side and keyd
+// both implement. The system component itself no longer derives any
+// tenant key (it has no master); this stays for tests and for keyd's
+// shared test vector.
 //
-// Each container has its own HMAC key, derived deterministically from the
-// master secret by HKDF. The info string includes the container name so that
-// every container's key is cryptographically independent: leaking one
-// container's key tells you nothing about any other container's key.
-//
-// The System component holds the master, derives per-container keys at
-// startup (and on SIGHUP when containers are added), writes each to disk
-// at /etc/safebox/containers/<containerName>.hmac, and ensures the file
-// is owned by safebox-infra mode 0640.
-//
-// At container-creation time, that key file is bind-mounted read-only into
-// the container at /etc/safebox/system.hmac, where the container's
-// Safebox Node finds it via the conventional path.
+// keyEpoch is a per-create random hex string stored in managed-containers.json
+// and forgotten on /containers/destroy. It goes in as the HKDF salt, so
+// re-creating a container with the same name yields a new key: a leaked key
+// from an old container does not authenticate against its namesake.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Derive a per-container HMAC key from the master secret.
- *
- * The info string includes the container name AND a per-container "key
- * epoch" — a random hex string generated at /containers/create time and
- * stored in managed-containers.json. The epoch is forgotten on
- * /containers/destroy, so re-creating a container with the same name
- * yields a NEW key. Compromise of an old container's key does not
- * authenticate against a freshly-created container with the same name.
- *
- * @param {Buffer} masterSecret    32-byte master from attestationDerive()
- * @param {string} containerName   container key in managed-containers.json
- * @param {string} keyEpoch        per-create random hex string (16-128 chars)
- * @return {Buffer}                32 bytes, deterministic per (master, name, epoch)
- */
 function derivePerContainerKey(masterSecret, containerName, keyEpoch) {
     if (!Buffer.isBuffer(masterSecret) || masterSecret.length !== KEY_BYTES) {
         throw new Error('derivePerContainerKey: masterSecret must be a 32-byte Buffer');
@@ -253,27 +218,13 @@ function derivePerContainerKey(masterSecret, containerName, keyEpoch) {
     if (typeof keyEpoch !== 'string' || !/^[a-f0-9]{16,128}$/.test(keyEpoch)) {
         throw new Error('derivePerContainerKey: keyEpoch must be 16-128 lowercase hex chars');
     }
-
-    var INFO = Buffer.from('safebox-container-' + containerName + '-' + keyEpoch + '-v2', 'utf8');
-    var SALT = Buffer.alloc(32);
-    var L = KEY_BYTES;
-
-    if (typeof crypto.hkdfSync === 'function') {
-        return Buffer.from(crypto.hkdfSync('sha256', masterSecret, SALT, INFO, L));
-    }
-    var prk = crypto.createHmac('sha256', SALT).update(masterSecret).digest();
-    var out = Buffer.alloc(0);
-    var t = Buffer.alloc(0);
-    var counter = 1;
-    while (out.length < L) {
-        t = crypto.createHmac('sha256', prk)
-            .update(Buffer.concat([t, INFO, Buffer.from([counter])]))
-            .digest();
-        out = Buffer.concat([out, t]);
-        counter++;
-    }
-    return out.slice(0, L);
+    var INFO = Buffer.from('safebox-container-' + containerName + '-v1', 'utf8');
+    var SALT = Buffer.from(keyEpoch, 'hex');
+    return hkdfSha256(masterSecret, SALT, INFO, KEY_BYTES);
 }
 
-// Exported for unit testing.
-module.exports = { load, attestationDerive, derivePerContainerKey, SECRET_PATH };
+module.exports = {
+    load, loadTenantKey, loadOperatorKey, readSeed, deriveMaster, deriveOperatorKey, derivePerContainerKey,
+    tenantKeyPath,
+    TENANT, SEED_PATH, CREDENTIAL_NAME, KEY_BYTES, KEYS_DIR, OPERATOR_KEY_PATH, INSTANCE_KEY_FILENAME,
+};

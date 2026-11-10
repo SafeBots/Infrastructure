@@ -1,0 +1,63 @@
+{
+  "manifestVersion": "1.0",
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+  "modelId": "deepseek-v4.1-flash",
+  "displayName": "DeepSeek V4.1 Flash",
+  "runnerType": "vllm",
+  "license": "MIT",
+
+  "hardware": {
+    "minGpus": 4,
+    "gpuModel": "H100-80GB",
+    "minVramPerGpu": 81920,
+    "minRamMb": 131072,
+    "diskGb": 320
+  },
+
+  "inference": {
+    "architecture": "MoE",
+    "parameters": "552B total / ~37B active",
+    "attention": "MLA (Multi-Latent Attention)",
+    "contextLength": 131072,
+    "kvBytesPerToken": 890,
+    "quantization": null,
+    "dtype": "bf16",
+    "tensorParallel": 4
+  },
+
+  "vllm": {
+    "modelArgs": {
+      "trust_remote_code": true,
+      "tensor_parallel_size": 4,
+      "max_model_len": 131072,
+      "enable_prefix_caching": true,
+      "gpu_memory_utilization": 0.92,
+      "enforce_eager": false
+    },
+    "engineArgs": {
+      "enable_chunked_prefill": true,
+      "max_num_batched_tokens": 65536
+    }
+  },
+
+  "protocols": {
+    "chat": true,
+    "complete": true,
+    "embed": false
+  },
+
+  "cost": {
+    "safebux": 0.6,
+    "unit": "request"
+  },
+
+  "weights": {
+    "files": [
+      "model-00001-of-00082.safetensors",
+      "model-00082-of-00082.safetensors"
+    ],
+    "totalSizeGb": 298,
+    "format": "safetensors",
+    "sha256": "PLACEHOLDER — real hash set by M-of-N governance signing"
+  }
+}

@@ -201,6 +201,38 @@
         "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
         "description": "Load Mistral 7B Instruct"
       },
+      "model-load-kimi-k3": {
+        "action": "model-load",
+        "modelId": "moonshotai/Kimi-K3.1-Pro",
+        "quantization": "awq-4bit",
+        "maxContextLength": 131072,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Kimi K3.1 Pro (2.8T MoE, 104B active) — requires multi-node or large GPU config"
+      },
+      "model-load-ornith-397b": {
+        "action": "model-load",
+        "modelId": "ornith-ai/Ornith-1.0-397B",
+        "quantization": "fp8",
+        "maxContextLength": 262144,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Ornith-1.0-397B (397B MoE, agentic coding) — requires 8× H100 80GB"
+      },
+      "model-load-ornith-35b": {
+        "action": "model-load",
+        "modelId": "ornith-ai/Ornith-1.0-35B",
+        "quantization": "fp8",
+        "maxContextLength": 262144,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Ornith-1.0-35B (35B MoE, agentic coding)"
+      },
+      "model-load-ornith-9b": {
+        "action": "model-load",
+        "modelId": "ornith-ai/Ornith-1.0-9B",
+        "quantization": "fp16",
+        "maxContextLength": 262144,
+        "verifiedOpToken": "REPLACE_WITH_VERIFIED_OP_TOKEN",
+        "description": "Load Ornith-1.0-9B (9B dense, lightweight agentic coding)"
+      },
       "cache-flush-all": {
         "action": "cache-flush",
         "scope": "all",
