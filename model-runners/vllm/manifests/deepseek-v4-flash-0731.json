@@ -1,0 +1,70 @@
+{
+    "name": "deepseek-v4-flash-0731",
+    "vllmModel": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "manifestHash": "",
+    "version": "v4-flash-0731",
+    "vendor": "DeepSeek",
+    "license": "MIT",
+    "licenseNote": "COMMERCIAL-OK. MIT \u2014 repository and weights both MIT-licensed and ungated. Clears Safebux-metered serving AND IPFS/EBS redistribution with no separate license step (unlike the older DeepSeek-License checkpoints).",
+    "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+    "gitRevision": "PIN_ME_verify_main_commit_on_hf",
+    "weights": [
+        {
+            "file": "model-NNNNN-of-000NN.safetensors",
+            "bytes": 0,
+            "sha256": "CAPTURE_FROM_INDEX_AT_BUILD",
+            "cid": "ADD_AFTER_IPFS_PIN",
+            "note": "284B-param MoE (304B repo params incl. the attached DSpark speculative-decoding draft module), 13B active/token. Tensor types BF16/FP8_E4M3/I8. Capture per-shard SHA-256 from model.safetensors.index.json at the pinned main-branch commit at build. The DSpark draft ships INSIDE this checkpoint \u2014 no separate draft-model weights to fetch.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/deepseek-v4-flash-0731/",
+                "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/PIN_ME_verify_main_commit_on_hf/"
+            ]
+        }
+    ],
+    "vllm": {
+        "tensorParallelSize": 8,
+        "dataParallelSize": 4,
+        "maxModelLen": 1048576,
+        "dtype": "bfloat16",
+        "kvCacheDtype": "fp8",
+        "quantization": "",
+        "gpuMemoryUtilization": 0.90,
+        "trustRemoteCode": true,
+        "enforceEager": false,
+        "extraFlags": [
+            "--block-size", "256",
+            "--enable-expert-parallel",
+            "--moe-backend", "deep_gemm_mega_moe",
+            "--tokenizer-mode", "deepseek_v4",
+            "--tool-call-parser", "deepseek_v4",
+            "--enable-auto-tool-choice",
+            "--reasoning-parser", "deepseek_v4",
+            "--speculative-config", "{\"method\":\"dspark\",\"num_speculative_tokens\":7,\"draft_sample_method\":\"greedy\"}"
+        ]
+    },
+    "capabilities": {
+        "chat": true,
+        "complete": true,
+        "embed": false,
+        "toolUse": true,
+        "vision": false,
+        "reasoning": true,
+        "reasoningEffortLevels": ["low", "high", "max"]
+    },
+    "resources": {
+        "minGpuMemoryGb": 640,
+        "recommendedGpu": "Single 4\u00d7GB300 node for full BF16/FP8 serving (DeepSeek's own vLLM example). At aggressive GGUF quant: ~110 GB combined RAM+VRAM (8-bit \u2248162 GB, 3-bit \u2248103 GB, Unsloth dynamic builds). NOT a single-consumer-GPU runner \u2014 every expert stays resident even though only 13B activate/token.",
+        "approximateLoadSec": 300
+    },
+    "sampling": {
+        "temperature": 1.0,
+        "topP": 0.95,
+        "topPNote": "top_p=0.95 for agentic scenarios, 1.0 otherwise. temperature=1.0. Up to 384K output tokens at high/max reasoning effort.",
+        "maxOutputTokens": 384000
+    },
+    "trustRemoteCodeReview": "REQUIRED before install. Every official launch command sets --trust-remote-code. Pin the main-branch commit, review the custom modeling code and the encoding_dsv4 package, and vet through the trust-or-simulate harness before promotion. Same gated posture as deepseek-v3, kimi-k3, kimi-linear-48b, nemotron-omni.",
+    "chatTemplateNote": "NO Jinja chat template. The repo ships an encoding/ folder with encode_messages / parse_message_from_completion_text (import: encoding_dsv4). Serving via vLLM with --tokenizer-mode deepseek_v4 applies the built-in encoding so the OpenAI-compatible endpoint works without the helper scripts \u2014 the runner's templating path must NOT assume a Jinja template exists. Keep reasoning controls in chat_template_kwargs (reasoning_effort: low|high|max).",
+    "hardwareCaveat": "Speculative decoding (DSpark/MTP) is UNAVAILABLE on sm_120 \u2014 both abort during warmup (sparse MLA kernel requires >64 tokens/batch; spec verification submits only the draft length). Disable the --speculative-config flag on sm_120 GPUs.",
+    "notes": "DeepSeek-V4-Flash-0731 (official release, 2026-07-31): 284B MoE, 13B active, 1M context, MIT. Re-post-trained from the April preview (same architecture) \u2014 large agentic/coding jump; beats the far larger V4-Pro (Preview) on every agentic benchmark DeepSeek published (Terminal Bench 2.1 82.7, DeepSWE 54.4). Runs on the EXISTING vllm runner (also SGLang: --moe-runner-backend flashinfer_mxfp4 --speculative-algorithm DSPARK --tp 4). ALL benchmark numbers are DeepSeek's own \u2014 treat as frontier-class, verify on your own agentic eval before betting. The HN 'very affordable' refers to DeepSeek's hosted API ($0.14/$0.28 per M tokens), which is irrelevant to in-box serving cost \u2014 self-hosting needs a 4\u00d7GB300-class node or a heavily-quantized large box."
+}

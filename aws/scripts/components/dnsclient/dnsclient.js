@@ -35,7 +35,7 @@
 //
 // What it does NOT do:
 //   - It does not manage TLS certificates for the customer-facing vhosts.
-//     That's autovhost's job.
+//     That's autohost's job.
 //   - It does not register custom domains. The DNS API handles those
 //     via the dashboard; dnsclient only announces the box's primary
 //     <safeboxId>.safebots.org name.

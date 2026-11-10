@@ -1,0 +1,37 @@
+{
+    "name":              "stable-audio-open-1.0",
+    "manifestHash":      "",
+    "version":           "1.0",
+    "vendor":            "Stability AI",
+    "license":           "Apache-2.0 (free for personal and commercial use)",
+    "homepage":          "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+
+    "stableAudio": {
+        "huggingfaceModel": "stabilityai/stable-audio-open-1.0",
+        "defaultDurationSec": 11.0,
+        "maxDurationSec":     47.0,
+        "defaultSteps":       100,
+        "defaultCfgScale":    7.0,
+        "defaultSampler":     "dpmpp-3m-sde",
+        "defaultFormat":      "wav",
+        "sampleRate":         44100
+    },
+
+    "capabilities": {
+        "text2audio":   true,
+        "audio2audio":  false,
+        "inpaint":      false,
+        "streaming":    false,
+        "outputFormats": ["wav", "mp3", "ogg"]
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     10,
+        "recommendedGpu":     "1× RTX 3090 24GB / 1× A10 24GB / 1× L40S 48GB",
+        "approximateLoadSec": 30,
+        "diskSizeGb":         4.5,
+        "audioSecondsTypical": "~15-45 seconds per clip on consumer GPU (100 steps DPM++ 3M-SDE)"
+    },
+
+    "notes": "The full Stable Audio Open release — ~1.21B parameters, supports clips up to 47 seconds, 100 diffusion steps with DPM++ 3M-SDE by default for higher quality. Apache 2.0 — commercial use unrestricted. The right pick when audio quality matters more than latency (background music, podcast bumpers, ambient soundtracks, foley for video). For real-time SFX in voice agents, use stable-audio-open-small instead."
+}

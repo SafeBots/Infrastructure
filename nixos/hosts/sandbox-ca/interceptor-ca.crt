@@ -1,0 +1,4 @@
+-----BEGIN CERTIFICATE-----
+PLACEHOLDER — replace with the real interceptor CA cert at build time.
+This is intentionally not a valid cert so a real build must provision one.
+-----END CERTIFICATE-----

@@ -1,0 +1,40 @@
+{
+    "name":              "flux-1-schnell",
+    "manifestHash":      "",
+    "version":           "1.0",
+    "vendor":            "Black Forest Labs",
+    "license":           "Apache-2.0 (free for personal and commercial use)",
+    "homepage":          "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+
+    "comfyui": {
+        "workflowFamily":  "flux",
+        "unetName":        "flux1-schnell.safetensors",
+        "vaeName":         "ae.safetensors",
+        "clipNames":       "t5xxl_fp8_e4m3fn.safetensors,clip_l.safetensors",
+        "defaultSteps":    4,
+        "defaultCfg":      1.0,
+        "defaultWidth":    1024,
+        "defaultHeight":   1024,
+        "defaultSampler":  "euler",
+        "defaultScheduler": "simple"
+    },
+
+    "capabilities": {
+        "text2img":   true,
+        "img2img":    false,
+        "inpaint":    false,
+        "controlnet": false,
+        "lora":       false,
+        "batch":      true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     12,
+        "recommendedGpu":     "1× RTX 3060 12GB (fp8) / 1× RTX 3090 24GB (fp16) / Apple Silicon 32GB+",
+        "approximateLoadSec": 45,
+        "diskSizeGb":         24,
+        "imageSecondsTypical": "~2-8s per 1024×1024 image (4 steps) on consumer GPU"
+    },
+
+    "notes": "Step-distilled FLUX (4 steps, CFG=1.0). The fastest commercial-OK option in the FLUX family. Apache 2.0 means you can use it in production without licensing fees. Quality is between SDXL and FLUX.1 [dev] — best when speed matters more than peak quality. 12B parameters total, runs in ~12 GB VRAM at fp8 quantization."
+}

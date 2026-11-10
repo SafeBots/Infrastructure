@@ -1,0 +1,49 @@
+{
+    "name": "deepseek-v3",
+    "vllmModel": "deepseek-ai/DeepSeek-V3",
+    "manifestHash": "",
+    "version": "v3",
+    "vendor": "DeepSeek (High-Flyer)",
+    "license": "DeepSeek License (permissive, commercial OK)",
+    "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-V3",
+    "weights": [
+        {
+            "file": "model-NNNNN-of-000NN.safetensors",
+            "bytes": 0,
+            "sha256": "CAPTURE_FROM_INDEX_AT_BUILD",
+            "cid": "ADD_AFTER_IPFS_PIN",
+            "note": "Capture per-shard SHA-256 from /resolve/d990f04/model.safetensors.index.json",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/deepseek-v3/",
+                "https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/d990f04/"
+            ]
+        }
+    ],
+    "vllm": {
+        "tensorParallelSize": 8,
+        "maxModelLen": 131072,
+        "dtype": "bfloat16",
+        "quantization": "",
+        "gpuMemoryUtilization": 0.92,
+        "trustRemoteCode": true,
+        "enforceEager": false,
+        "extraFlags": [
+            "--enable-prefix-caching"
+        ]
+    },
+    "capabilities": {
+        "chat": true,
+        "complete": true,
+        "embed": false,
+        "toolUse": true,
+        "vision": false
+    },
+    "resources": {
+        "minGpuMemoryGb": 1280,
+        "recommendedGpu": "8\u00d7 NVIDIA H100 80GB (or 8\u00d7 H200 for 1M-context headroom)",
+        "approximateLoadSec": 240
+    },
+    "notes": "671B-parameter MoE (~37B active). The open-source frontier benchmark as of mid-2026. Requires trustRemoteCode=true because the repo ships custom Python \u2014 review the source before approving an install. For smaller deployment footprints use DeepSeek-V2 or DeepSeek-V3-Lite (separate manifests).",
+    "gitRevision": "d990f04"
+}

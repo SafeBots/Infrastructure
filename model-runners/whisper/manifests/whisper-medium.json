@@ -1,0 +1,35 @@
+{
+    "name":                 "whisper-medium",
+    "fasterWhisperModel":   "medium",
+    "manifestHash":         "",
+    "version":              "v2",
+    "vendor":               "OpenAI",
+    "license":              "MIT",
+    "homepage":             "https://huggingface.co/openai/whisper-medium",
+
+    "whisper": {
+        "device":            "auto",
+        "computeType":       "int8_float16",
+        "numWorkers":        1,
+        "cpuThreads":        0
+    },
+
+    "capabilities": {
+        "transcribe":      true,
+        "translate":       true,
+        "diarize":         false,
+        "wordTimestamps":  true,
+        "vadFilter":       true,
+        "batch":           true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     5,
+        "recommendedGpu":     "1× T4 16GB / 1× RTX 3060 12GB / Apple Silicon M1+ 16GB+",
+        "approximateLoadSec": 10,
+        "diskSizeGb":         1.5,
+        "realTimeFactor":     "~3x on consumer GPU; ~6x int8 on CPU"
+    },
+
+    "notes": "769M params. The right pick for laptops without dedicated GPUs, or for environments where the turbo decoder gains aren't accessible (older Faster-Whisper, certain quantization paths). Good multilingual accuracy and supports translation; not as fast as turbo but works on more hardware."
+}

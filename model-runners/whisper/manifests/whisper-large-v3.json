@@ -1,0 +1,35 @@
+{
+    "name":                 "whisper-large-v3",
+    "fasterWhisperModel":   "large-v3",
+    "manifestHash":         "",
+    "version":              "v3",
+    "vendor":               "OpenAI",
+    "license":              "MIT",
+    "homepage":             "https://huggingface.co/openai/whisper-large-v3",
+
+    "whisper": {
+        "device":            "cuda",
+        "computeType":       "float16",
+        "numWorkers":        1,
+        "cpuThreads":        0
+    },
+
+    "capabilities": {
+        "transcribe":      true,
+        "translate":       true,
+        "diarize":         false,
+        "wordTimestamps":  true,
+        "vadFilter":       true,
+        "batch":           true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     6,
+        "recommendedGpu":     "1× T4 16GB / 1× A10 24GB / 1× RTX 3090 24GB",
+        "approximateLoadSec": 30,
+        "diskSizeGb":         2.9,
+        "realTimeFactor":     "~1-2x on consumer GPU; ~55x on dedicated A100"
+    },
+
+    "notes": "Full-accuracy multilingual Whisper. Slower than turbo but the only option for audio→English translation (turbo was distilled without translation data). Best choice when accuracy matters more than throughput, or when translation is needed. WER ~2.7% on LibriSpeech test-clean, ~8-12% on real-world English."
+}

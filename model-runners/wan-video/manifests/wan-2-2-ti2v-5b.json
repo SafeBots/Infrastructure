@@ -1,0 +1,41 @@
+{
+    "name":              "wan-2-2-ti2v-5b",
+    "manifestHash":      "",
+    "version":           "2.2",
+    "vendor":            "Alibaba (Tongyi Wanxiang)",
+    "license":           "Apache-2.0 (free for personal and commercial use)",
+    "homepage":          "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+
+    "wanVideo": {
+        "huggingfaceModel":      "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "variant":               "ti2v-5b",
+        "architecture":          "single-stream diffusion (not MoE)",
+        "defaultWidth":          1280,
+        "defaultHeight":         704,
+        "defaultNumFrames":      121,
+        "defaultFps":            24,
+        "defaultSteps":          50,
+        "defaultGuidance":       5.0,
+        "defaultFlowShift":      5.0,
+        "maxNumFrames":          121
+    },
+
+    "capabilities": {
+        "text2video":   true,
+        "image2video":  true,
+        "video2video":  false,
+        "audio":        false,
+        "streaming":    false,
+        "outputFormats": ["mp4"]
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     16,
+        "recommendedGpu":     "1× RTX 4080 16GB / 1× RTX 4090 24GB / 1× A10 24GB",
+        "approximateLoadSec": 75,
+        "diskSizeGb":         30,
+        "videoSecondsTypical": "~60-120s per 5-7s clip on RTX 4090; ~150-240s on RTX 4080"
+    },
+
+    "notes": "Combined text-to-video + image-to-video, 5B parameters, runs comfortably on 16GB consumer GPUs. The right Wan choice for tenants on consumer hardware. Higher-quality A14B variants are documented in sibling manifests but need 24GB+ VRAM. Apache 2.0 unrestricted commercial use. No audio path — pair with stable-audio-3 if you need background music, or use the ltx-video runner for synchronized audio+video in one model. Dimensions must be divisible by 16 (the runner clamps automatically)."
+}

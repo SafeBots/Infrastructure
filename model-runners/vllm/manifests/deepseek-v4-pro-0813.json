@@ -1,0 +1,79 @@
+{
+    "name": "deepseek-v4-pro-0813",
+    "vllmModel": "deepseek-ai/DeepSeek-V4-Pro-0813",
+    "manifestHash": "",
+    "version": "v4-pro-0813",
+    "vendor": "DeepSeek",
+    "license": "MIT",
+    "licenseNote": "COMMERCIAL-OK. MIT \u2014 repository and weights both MIT-licensed and ungated. Clears Safebux-metered serving AND IPFS/EBS redistribution with no separate license step (same clean position as deepseek-v4-flash-0731; unlike the older DeepSeek-License checkpoints).",
+    "homepage": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813",
+    "gitRevision": "PIN_ME_verify_main_commit_on_hf",
+    "weights": [
+        {
+            "file": "model-NNNNN-of-000NN.safetensors",
+            "bytes": 0,
+            "sha256": "CAPTURE_FROM_INDEX_AT_BUILD",
+            "cid": "ADD_AFTER_IPFS_PIN",
+            "note": "1.6T-param MoE, ~49B active/token (256 routed experts + 1 shared, top-8 routing; ~3.1% sparsity \u2014 tightest among 2026 frontier models). ~862GB native weights. Tensor types BF16/FP8_E4M3; native FP4 checkpoint for Blackwell. Capture per-shard SHA-256 from model.safetensors.index.json at the pinned main-branch commit at build. VERIFY the 0813 checkpoint is the intended one \u2014 DeepSeek ships dated re-post-trains; pin the exact commit, do not float main.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/deepseek-v4-pro-0813/",
+                "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813/resolve/PIN_ME_verify_main_commit_on_hf/"
+            ]
+        }
+    ],
+    "vllm": {
+        "tensorParallelSize": 8,
+        "dataParallelSize": 1,
+        "maxModelLen": 1048576,
+        "dtype": "bfloat16",
+        "kvCacheDtype": "fp8",
+        "quantization": "",
+        "gpuMemoryUtilization": 0.9,
+        "trustRemoteCode": true,
+        "enforceEager": false,
+        "extraFlags": [
+            "--block-size",
+            "256",
+            "--enable-expert-parallel",
+            "--moe-backend",
+            "deep_gemm_mega_moe",
+            "--tokenizer-mode",
+            "deepseek_v4",
+            "--tool-call-parser",
+            "deepseek_v4",
+            "--enable-auto-tool-choice",
+            "--reasoning-parser",
+            "deepseek_v4"
+        ],
+        "extraFlagsNote": "No --speculative-config here: unlike V4-Flash, V4-Pro does not ship an in-weights DSpark draft module. If a compatible draft becomes available, add it as for Flash. tensorParallelSize=8 targets a single 8\u00d7B300 node (native FP4); for a 2-node Hopper deployment use pipeline/tensor parallel across nodes (see resources)."
+    },
+    "capabilities": {
+        "chat": true,
+        "complete": true,
+        "embed": false,
+        "toolUse": true,
+        "vision": false,
+        "reasoning": true,
+        "reasoningEffortLevels": [
+            "low",
+            "high",
+            "max"
+        ]
+    },
+    "resources": {
+        "minGpuMemoryGb": 1024,
+        "recommendedGpu": "LARGE-NODE / CLUSTER runner \u2014 NOT single-node commodity. Native FP4 at full scale: single 8\u00d7B300 (Blackwell) node. Hopper path: 2-node H200 cluster for full 1M context (single H200 node compromises context length, not just throughput). ~862GB weights mean every expert stays resident even though only ~49B activate/token. This is the heaviest runner in the catalog \u2014 flag capacity accordingly; most Safebox deployments will prefer deepseek-v4-flash-0731 (4\u00d7GB300 or heavily-quantized single box).",
+        "approximateLoadSec": 600
+    },
+    "sampling": {
+        "temperature": 1.0,
+        "topP": 0.95,
+        "topPNote": "top_p=0.95 for agentic scenarios, 1.0 otherwise. temperature=1.0. Up to 384K output tokens at high/max reasoning effort; 1M-token context window.",
+        "maxOutputTokens": 384000
+    },
+    "trustRemoteCodeReview": "REQUIRED before install. Every official launch command sets --trust-remote-code. Pin the main-branch commit, review the custom modeling code and the encoding_dsv4 package, and vet through the trust-or-simulate harness before promotion. Same gated posture as deepseek-v4-flash-0731, deepseek-v3, kimi-k3, kimi-linear-48b, nemotron-omni.",
+    "chatTemplateNote": "NO Jinja chat template (same as V4-Flash). The repo ships an encoding/ folder with encode_messages / parse_message_from_completion_text (import: encoding_dsv4). Serve via vLLM with --tokenizer-mode deepseek_v4 so the OpenAI-compatible endpoint works without the helper scripts \u2014 the runner's templating path must NOT assume a Jinja template exists. Keep reasoning controls in chat_template_kwargs (reasoning_effort: low|high|max).",
+    "hardwareCaveat": "Requires vLLM 0.9.x or SGLang with Day-0 V4 support; TGI has no V4 support; Ollama/llama.cpp community GGUFs are UNVERIFIED against DeepSeek's official checkpoints \u2014 for production use vLLM or SGLang only. Running V4-Pro on less than the recommended node compromises CONTEXT LENGTH, not just throughput.",
+    "notes": "DeepSeek-V4-Pro-0813: 1.6T MoE, ~49B active, 1M context, MIT. The flagship sibling of deepseek-v4-flash-0731 (same MoE family: CSA+HCA attention replacing V3's MLA). Frontier-class coding/reasoning (~80.6% SWE-bench Verified per DeepSeek). IMPORTANT for model selection: DeepSeek's own release positioned V4-Flash-0731 as BEATING the larger V4-Pro on every agentic benchmark they published \u2014 so Pro is the pick for raw reasoning/context depth, NOT automatically for agentic/coding throughput, and it costs ~5\u00d7 the hardware. Choose Pro only when the workload genuinely needs the 1.6T-scale reasoning or the full 1M context at depth. ALL benchmark numbers are DeepSeek's own \u2014 treat as frontier-class, verify on your own eval before betting. Any 'cheap' framing refers to DeepSeek's hosted API, which is irrelevant to in-box serving cost: self-hosting Pro is an 8\u00d7B300 / 2-node-H200 infrastructure project. Runs on the EXISTING vllm runner."
+}

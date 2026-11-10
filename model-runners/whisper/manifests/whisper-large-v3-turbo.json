@@ -1,0 +1,35 @@
+{
+    "name":                 "whisper-large-v3-turbo",
+    "fasterWhisperModel":   "large-v3-turbo",
+    "manifestHash":         "",
+    "version":              "v3-turbo",
+    "vendor":               "OpenAI",
+    "license":              "MIT",
+    "homepage":             "https://huggingface.co/openai/whisper-large-v3-turbo",
+
+    "whisper": {
+        "device":            "cuda",
+        "computeType":       "float16",
+        "numWorkers":        1,
+        "cpuThreads":        0
+    },
+
+    "capabilities": {
+        "transcribe":      true,
+        "translate":       false,
+        "diarize":         false,
+        "wordTimestamps":  true,
+        "vadFilter":       true,
+        "batch":           true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     2,
+        "recommendedGpu":     "1× T4 16GB / 1× RTX 3060 6GB (int8) / Apple Silicon M1+",
+        "approximateLoadSec": 15,
+        "diskSizeGb":         1.6,
+        "realTimeFactor":     "~4-8x on consumer GPU; ~129x on dedicated A100"
+    },
+
+    "notes": "Sweet spot for production transcription as of 2026. Distilled from large-v3 (32 decoder layers → 4), ~4-8x faster with WER within 0.4 percentage points on real-world audio. Multilingual transcription supported (99 languages) but NOT translation — for audio→English translation use whisper-large-v3 instead. Fits in ~1.5 GB VRAM at int8, runs well on consumer GPUs."
+}

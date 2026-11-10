@@ -1,0 +1,36 @@
+{
+    "name": "nemotron-3-nano-omni",
+    "vllmModel": "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+    "manifestHash": "",
+    "version": "3-nano-omni",
+    "vendor": "NVIDIA",
+    "license": "NVIDIA Open Model License (commercial use OK \u2014 verify terms)",
+    "homepage": "https://huggingface.co/nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+    "weights": [],
+    "vllm": {
+        "tensorParallelSize": 1,
+        "maxModelLen": 131072,
+        "dtype": "auto",
+        "quantization": "fp8",
+        "gpuMemoryUtilization": 0.85,
+        "trustRemoteCode": true,
+        "enforceEager": false,
+        "extraFlags": [
+            "--no-enable-chunked-prefill"
+        ]
+    },
+    "capabilities": {
+        "chat": true,
+        "complete": true,
+        "embed": false,
+        "toolUse": true,
+        "vision": true
+    },
+    "resources": {
+        "minGpuMemoryGb": 48,
+        "recommendedGpu": "1\u00d7 H100 80GB (BF16) or 1\u00d7 L40S 48GB (FP8). Single-GPU capable.",
+        "approximateLoadSec": 120
+    },
+    "notes": "Omni-modal (text+image+audio+video), 30B/~3B active, ~April 2026, commercial OK. CORRECTION from earlier: currently served by SGLang via NVIDIA's dev images, not plain vLLM \u2014 needs an SGLang runner added to the suite, or wait for vLLM mainline omni support. trustRemoteCode=true \u2014 pin revision + review. FP8/NVFP4 variants 'to come'; this is BF16.",
+    "runnerNote": "SERVED VIA SGLANG, NOT vLLM. NVIDIA ships model-specific images: lmsysorg/sglang:dev-cu13-nemotronh-nano-omni-reasoning-v3 (CUDA13) or dev-nemotronh-nano-omni-reasoning-v3 (CUDA12.9). Cmd: sglang serve --model-path <repo> --trust-remote-code. Needs librosa for audio. This manifest is parked under vllm/ but requires an SGLang runner (not yet in the suite) OR mainline vLLM omni support (pending)."
+}

@@ -1,0 +1,38 @@
+{
+    "name":              "sdxl-base-1.0",
+    "manifestHash":      "",
+    "version":           "1.0",
+    "vendor":            "Stability AI",
+    "license":           "OpenRAIL++-M (permissive with use-restrictions; commercial OK)",
+    "homepage":          "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+
+    "comfyui": {
+        "workflowFamily":  "sdxl",
+        "checkpointName":  "sd_xl_base_1.0.safetensors",
+        "defaultSteps":    25,
+        "defaultCfg":      7.0,
+        "defaultWidth":    1024,
+        "defaultHeight":   1024,
+        "defaultSampler":  "dpmpp_2m",
+        "defaultScheduler": "karras"
+    },
+
+    "capabilities": {
+        "text2img":   true,
+        "img2img":    false,
+        "inpaint":    false,
+        "controlnet": false,
+        "lora":       false,
+        "batch":      true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     8,
+        "recommendedGpu":     "1× T4 16GB / 1× RTX 3060 12GB / 1× A10 24GB",
+        "approximateLoadSec": 20,
+        "diskSizeGb":         6.9,
+        "imageSecondsTypical": "~10-30s per 1024×1024 image at 25 steps on consumer GPU"
+    },
+
+    "notes": "Classic SDXL base, no refiner. Strong general-purpose text-to-image with broad ecosystem support (LoRAs, ControlNets, fine-tunes). License is OpenRAIL++-M — use-restrictions apply (no CSAM, no defamation, etc.) but commercial use is permitted without paying anyone."
+}

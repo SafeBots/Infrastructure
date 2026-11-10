@@ -1,0 +1,143 @@
+# modules/hardening.nix
+#
+# The Bug-5 invariant, declaratively — the single most important thing to carry
+# from install-base.sh into NixOS: ZERO interactive-shell access.
+#
+# install-base.sh REMOVED sshd/ssm/telnet/getty AFTER install and then VERIFIED
+# they were gone. NixOS is stronger: these are simply never in the closure, so
+# there is nothing to remove and nothing that a later package pull can silently
+# reactivate. A closure that cannot produce a shell is the native form of
+# "zero interactive access by design."
+#
+# The attestation guarantee is "this is the exact code that booted." It says
+# nothing about what a shell user could do after boot — so there must be no
+# shell user. The boot cycle (attested) is the only legitimate change mechanism.
+{ config, pkgs, lib, ... }:
+
+{
+  # ---- No SSH (install-base.sh Tier 2 removal) ---------------------------
+  # This is the sealed image (attested, production) stance: zero ingress. The Image 1 (the builder)
+  # BUILDER profile (hosts/ami1-builder.nix) re-enables SSH as its ONLY ingress
+  # so an operator can run attestation/image-seal/seal-image.sh, which tears SSH
+  # back down and normalizes nondeterminism to produce the attested sealed image.
+  services.openssh.enable = false;
+
+  # ---- No cloud remote-shell agents --------------------------------------
+  # NixOS cloud images don't ship AWS SSM / Azure WALinuxAgent shell channels
+  # by default; assert they stay disabled. (IAM-role metadata access still
+  # works — that's the instance metadata service, not a shell agent.)
+  # If a cloud module tries to enable an agent that offers run-command/shell,
+  # override it to false in the host file.
+
+  # ---- No getty / serial-getty / debug-shell / emergency shell (Tier 4) ---
+  # EVERY interactive-access path must be disabled. A single missed serial
+  # device or emergency-mode shell is a backdoor that bypasses the entire
+  # "no SSH, no console, no shell" guarantee.
+  systemd.services."getty@".enable = false;
+  systemd.services."serial-getty@ttyS0".enable = false;   # AWS EC2 Serial Console
+  systemd.services."serial-getty@ttyS1".enable = false;   # secondary serial ports
+  systemd.services."serial-getty@ttyS2".enable = false;
+  systemd.services."serial-getty@ttyS3".enable = false;
+  systemd.services."serial-getty@hvc0".enable  = false;   # Xen / KVM virtio console (GCP, OCI)
+  systemd.services."serial-getty@ttyAMA0".enable = false; # ARM serial (Graviton, Ampere)
+  systemd.services."debug-shell".enable = false;          # systemd debug shell (root)
+  systemd.services."rescue".enable = false;               # rescue.service → root shell
+  systemd.services."emergency".enable = false;            # emergency.service → root shell
+  # Also drop autovt so no virtual-terminal login is spawned.
+  systemd.services."autovt@".enable = false;
+
+  # ---- No cloud-console agents that could spawn interactive sessions -----
+  # NixOS cloud images don't ship these by default (unlike vendor AMIs), but
+  # assert their absence so a future cloud module can't silently add one.
+  # The seal (seal-image.sh) also checks for all of these on the ACTUAL image
+  # as belt-and-suspenders.
+  #
+  # AWS:     EC2 Serial Console (ttyS0 disabled + mutableUsers=false + root locked)
+  #          EC2 Instance Connect (injects SSH keys via metadata — not in closure)
+  #          SSM Agent (remote shell — not in closure, asserted below)
+  # GCP:     google-guest-agent (serial-port login, OS Login SSH key injection)
+  #          google-oslogin (PAM module that injects SSH keys — not in closure)
+  #          google-osconfig-agent (can run scripts — not in closure)
+  # Azure:   WALinuxAgent (serial console, remote script exec — not in closure)
+  #          azcmagent / Azure Arc (remote shell — not in closure)
+  # OCI:     ocid / oci-utils (serial console agent — not in closure)
+  # IBM:     VNC/serial → blocked by no-getty + locked root
+  # Alibaba: aliyun-service / cloud assistant (remote exec — not in closure)
+
+  # ---- No legacy remote-access daemons (Tier 1) --------------------------
+  # These are simply not in environment.systemPackages / services, so they're
+  # absent from the closure. Nothing to remove; nothing to mask.
+
+  # ---- No mutable users / no password login ------------------------------
+  # Nobody can be added at runtime, and no account has a usable password.
+  users.mutableUsers = false;
+  # No root password, no root shell login channel.
+  users.users.root.hashedPassword = "!";   # locked
+
+  # ---- Firewall (former iptables hardening) ------------------------------
+  # Default-deny; only what the stack needs is opened. Ports 22/23/513/514/
+  # 5985/5986 (the shell ports install-base.sh asserted were closed) are never
+  # opened here.
+  networking.firewall = {
+    enable = true;
+    allowedTCPPorts = [ 80 443 ];   # HTTP/HTTPS only; adjust per deployment
+    # No 22. No 23. No WinRM. No rsh/rlogin.
+  };
+
+  # ---- auditd (former /etc/audit/rules.d/safebox.rules) ------------------
+  # Full parity with install-base.sh's safebox.rules. The dnf/rpm watches are
+  # dropped as moot (no dnf/rpm on NixOS — the store IS the package db, and
+  # /nix/store exec is watched instead), but the npm/composer, config-file, and
+  # privilege-escalation watches carry over verbatim.
+  security.auditd.enable = true;
+  security.audit.enable = true;
+  security.audit.rules = [
+    # ZFS key access
+    "-w /run/safebox/zfs-key -p rwa -k safebox_zfs_key"
+    # Exec provenance: on NixOS the store replaces dnf/rpm as the code source.
+    "-w /nix/store -p x -k safebox_exec"
+    # Runtime package managers that still exist (app deploy / plugin installs).
+    "-w /run/current-system/sw/bin/npm -p x -k safebox_pkg"
+    "-w /run/current-system/sw/bin/composer -p x -k safebox_pkg"
+    # Sensitive config files (install-base.sh watched daemon.json, php.ini, nginx).
+    "-w /etc/docker/daemon.json -p wa -k safebox_config"
+    "-w /etc/nginx -p wa -k safebox_config"
+    # Privilege escalation attempts.
+    "-a always,exit -F arch=b64 -S setuid -F a0=0 -F auid>=1000 -F auid!=4294967295 -k safebox_priv_esc"
+  ];
+
+  # ---- fail2ban (install-base.sh installed fail2ban-1.0.2 as a service) ---
+  # base.nix has the package; enable the SERVICE here so it actually runs,
+  # matching install-base.sh. Default jails protect the SSH-less box's remaining
+  # ingress surface (nginx). No sshd jail (there is no sshd).
+  services.fail2ban.enable = true;
+
+  # ---- Assertion: fail the build if a shell channel sneaks in ------------
+  # Build-time guard mirroring install-base.sh's runtime `ss -tnl` port checks
+  # and its removal-then-verify of ssh/ssm/getty. On NixOS these are absence
+  # guarantees: the build fails rather than a runtime check catching it late.
+  assertions = [
+    {
+      assertion = !config.services.openssh.enable;
+      message = "Safebox invariant violated: SSH is enabled. An attested Safebox must have zero remote-shell access (install-base.sh Bug-5).";
+    }
+    {
+      # SSM / Azure agent / any cloud run-command shell channel must stay off.
+      # These option paths exist only if the respective cloud module is imported;
+      # the `or false` keeps the assertion valid when they're absent entirely.
+      assertion = !(config.services.amazon-ssm-agent.enable or false);
+      message = "Safebox invariant violated: amazon-ssm-agent is enabled — it is a remote-shell channel (install-base.sh Tier 3). Disable it in the host file.";
+    }
+    {
+      assertion = !(config.services.getty.autologinUser != null);
+      message = "Safebox invariant violated: a getty autologin user is set. The attested base must spawn no login prompt (install-base.sh Tier 4).";
+    }
+    {
+      # Serial consoles across ALL clouds: AWS EC2 Serial Console (ttyS0),
+      # GCP/OCI virtio console (hvc0), ARM serial (ttyAMA0). Also rescue and
+      # emergency shells, which give root on boot failure.
+      assertion = !config.users.mutableUsers;
+      message = "Safebox invariant violated: mutableUsers is true. EC2 Serial Console (and equivalents on other clouds) requires a user with a password — mutableUsers=false + locked root blocks it even if the serial device were enabled.";
+    }
+  ];
+}

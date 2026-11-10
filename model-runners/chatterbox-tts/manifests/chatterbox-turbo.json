@@ -1,0 +1,39 @@
+{
+    "name":         "chatterbox-turbo",
+    "manifestHash": "",
+    "version":      "turbo-v1",
+    "vendor":       "Resemble AI",
+    "license":      "MIT",
+    "licenseNote":  "COMMERCIAL-OK. MIT — usable in commercial and closed-source products per resemble.ai. Clears Safebux-metered serving AND IPFS/EBS redistribution with no separate license step. This is the Fish-S2 replacement that is actually serveable.",
+    "homepage":     "https://huggingface.co/ResembleAI/chatterbox-turbo",
+    "gitRevision":  "3c40542",
+    "weights": [
+        {
+            "file":   "t3_turbo_v1.safetensors",
+            "bytes":  1920000000,
+            "sha256": "fcf1f8c1d651bb7e3acd69ee5be269b4ac10c02980b7708213d598bc9f7cdf87",
+            "cid":    "ADD_AFTER_IPFS_PIN",
+            "note":   "Real SHA-256 captured from HF at rev 3c40542. Other files (s3gen.safetensors ~1.06GB, conds.pt, merges.txt, added_tokens.json) — capture their hashes from the repo at the pinned revision at build.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/chatterbox-turbo/t3_turbo_v1.safetensors",
+                "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/3c40542/t3_turbo_v1.safetensors"
+            ]
+        }
+    ],
+    "capabilities": {
+        "speech":     true,
+        "voiceClone": true,
+        "emotion":    true,
+        "streaming":  true,
+        "paralinguistics": ["[cough]", "[laugh]", "[chuckle]"],
+        "languages":  ["en-US"]
+    },
+    "resources": {
+        "minGpuMemoryGb":     6,
+        "recommendedGpu":     "1x consumer GPU (8-12GB). 350M params — light, single-GPU. ~6x realtime, ~75ms latency on a modern GPU.",
+        "approximateLoadSec": 20
+    },
+    "watermark": "Every output carries Resemble's PerTh (Perceptual Threshold) neural watermark — imperceptible, survives MP3/edits, ~100% detection. Note this for tenants: generated audio is watermarked by the model itself.",
+    "notes": "Chatterbox-Turbo (350M), MIT-licensed, zero-shot voice cloning + emotion control + native paralinguistic tags. The commercial-safe expressive TTS to pair with Kokoro (Kokoro = cheap Apache baseline, no cloning/emotion; Chatterbox = MIT expressive + cloning). Resemble's own blind test claims it beat ElevenLabs in ~63.75% of preferences — VENDOR-RUN, treat as 'same class', A/B on your own audio before betting on it. An ONNX build exists (ResembleAI/chatterbox-turbo-ONNX) for the light onnx runner. Multi-language: see chatterbox-multilingual (23+ langs, also MIT)."
+}

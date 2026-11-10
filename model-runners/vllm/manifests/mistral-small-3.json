@@ -1,0 +1,38 @@
+{
+    "name":         "mistral-small-3",
+    "vllmModel":    "mistralai/Mistral-Small-Instruct-2409",
+    "manifestHash": "",
+    "version":      "2409",
+    "vendor":       "Mistral AI",
+    "license":      "Mistral Research License (commercial use requires Mistral commercial license)",
+    "homepage":     "https://huggingface.co/mistralai/Mistral-Small-Instruct-2409",
+
+    "weights": [],
+
+    "vllm": {
+        "tensorParallelSize":   1,
+        "maxModelLen":          32768,
+        "dtype":                "bfloat16",
+        "quantization":         "",
+        "gpuMemoryUtilization": 0.9,
+        "trustRemoteCode":      false,
+        "enforceEager":         false,
+        "extraFlags":           []
+    },
+
+    "capabilities": {
+        "chat":     true,
+        "complete": true,
+        "embed":    false,
+        "toolUse":  true,
+        "vision":   false
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     48,
+        "recommendedGpu":     "1× A100 40GB / 1× L40S / 1× A6000",
+        "approximateLoadSec": 30
+    },
+
+    "notes": "22B dense. Strong reasoning per parameter, very fast on a single mid-tier GPU. Watch the license: commercial use needs a Mistral commercial agreement, not just downloading the weights."
+}

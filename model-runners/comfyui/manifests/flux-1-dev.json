@@ -1,0 +1,42 @@
+{
+    "name":              "flux-1-dev",
+    "manifestHash":      "",
+    "version":           "1.0",
+    "vendor":            "Black Forest Labs",
+    "license":           "FLUX.1 [dev] Non-Commercial License — paid BFL license REQUIRED for commercial/production use",
+    "licenseUrl":        "https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/LICENSE.md",
+    "commercialLicenseUrl": "https://bfl.ai/pricing/licensing",
+    "homepage":          "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+
+    "comfyui": {
+        "workflowFamily":  "flux",
+        "unetName":        "flux1-dev.safetensors",
+        "vaeName":         "ae.safetensors",
+        "clipNames":       "t5xxl_fp8_e4m3fn.safetensors,clip_l.safetensors",
+        "defaultSteps":    20,
+        "defaultCfg":      3.5,
+        "defaultWidth":    1024,
+        "defaultHeight":   1024,
+        "defaultSampler":  "euler",
+        "defaultScheduler": "normal"
+    },
+
+    "capabilities": {
+        "text2img":   true,
+        "img2img":    false,
+        "inpaint":    false,
+        "controlnet": false,
+        "lora":       false,
+        "batch":      true
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     24,
+        "recommendedGpu":     "1× RTX 4090 24GB / 1× A10 24GB (fp16); 1× RTX 3060 12GB (Q4 GGUF)",
+        "approximateLoadSec": 60,
+        "diskSizeGb":         24,
+        "imageSecondsTypical": "~10-30s per 1024×1024 image (20 steps) on consumer GPU"
+    },
+
+    "notes": "⚠️ NON-COMMERCIAL LICENSE: FLUX.1 [dev] is licensed for personal use, research, and evaluation only. Production deployment in any revenue-generating context requires a paid commercial license from Black Forest Labs (see licenseUrl above). The model weights are openly downloadable and the runner will load them; the legal compliance is the operator's responsibility. For commercial production use, deploy flux-1-schnell instead (Apache 2.0) unless the BFL commercial license is in place.\n\nQuality is excellent — closer to FLUX.1 [pro] than [schnell]. Distilled guidance ~3.5, 20-50 steps. Better text rendering and prompt adherence than SDXL."
+}

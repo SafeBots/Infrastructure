@@ -1,0 +1,25 @@
+# Stable Audio 3 runner — image manifest at /app/manifest.json declares
+# envVars, outputFiles, exitCodes per the Safebox image contract.
+
+FROM python@sha256:REPLACE_python312slim_DIGEST  # was python:3.12-slim — pin by digest
+
+RUN useradd --system --no-create-home --shell /sbin/nologin --uid 5000 runner
+
+WORKDIR /app
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY runner.py /app/
+
+# Read-only mounts (populated by the gateway):
+#   /srv/safebox/models           — installed model weights, read-only
+#   /etc/safebox/runners          — runner configs, read-only
+VOLUME ["/srv/safebox/models", "/etc/safebox/runners"]
+
+USER runner
+EXPOSE 7790
+
+ENV STABLE_AUDIO_3_HOST=0.0.0.0
+ENV STABLE_AUDIO_3_PORT=7790
+
+CMD ["python", "/app/runner.py"]

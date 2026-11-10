@@ -1,0 +1,45 @@
+[Unit]
+Description=Safebox autohost (on-demand nginx vhost + ACME provisioning; vendored Autohost)
+Documentation=https://github.com/safebots/safebox/blob/main/aws/scripts/components/autohost/README.md
+After=network-online.target nginx.service
+Wants=network-online.target
+Requires=nginx.service
+
+[Service]
+Type=simple
+User=safebox-infra
+Group=safebox-infra
+# Runs the vendored public Autohost with Safebox config. Autohost reads its
+# config from AUTOVHOST_CONFIG; we point it at the Safebox location, which maps
+# Safebox paths/socket onto Autohost's config surface.
+Environment=AUTOVHOST_CONFIG=/etc/safebox/autohost.json
+ExecStart=/usr/bin/node /opt/safebox/autohost/src/autohost.js
+Restart=on-failure
+RestartSec=10s
+
+StateDirectory=safebox/autohost
+StateDirectoryMode=0750
+
+# Hardening — needs to write into /etc/nginx and exec /usr/sbin/nginx -s reload.
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+MemoryMax=256M
+TasksMax=64
+
+ReadOnlyPaths=/etc/safebox
+ReadWritePaths=/var/lib/safebox/autohost /etc/nginx/conf.d/auto /etc/nginx/conf.d/auto-certs /run/safebox
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

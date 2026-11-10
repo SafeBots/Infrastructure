@@ -1,0 +1,9 @@
+# ONNX runner deps. onnxruntime{,-gpu} is installed in the Dockerfile per ONNX_GPU.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+numpy==2.2.1
+# tokenizers for text embedding/rerank models (BERT-family, BGE, etc.)
+tokenizers==0.21.0
+# Pillow for CLIP/vision preprocessing
+Pillow==11.1.0

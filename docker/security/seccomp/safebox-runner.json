@@ -1,0 +1,44 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "archMap": [
+    { "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": ["SCMP_ARCH_X86", "SCMP_ARCH_X32"] },
+    { "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": ["SCMP_ARCH_ARM"] }
+  ],
+  "syscalls": [
+    {
+      "comment": "Core allowlist for a network service (read/write/net/mem/thread). Deny everything else, notably: ptrace, keyctl, bpf, unshare, mount, pivot_root, kexec_load, init_module, finit_module, delete_module, add_key, request_key, userfaultfd, perf_event_open, process_vm_readv/writev, setns, and the obscure ioctls used in container escapes.",
+      "names": [
+        "accept","accept4","access","arch_prctl","bind","brk","capget","capset",
+        "chdir","chmod","chown","clock_getres","clock_gettime","clock_nanosleep",
+        "clone","clone3","close","close_range","connect","copy_file_range","dup","dup2","dup3",
+        "epoll_create","epoll_create1","epoll_ctl","epoll_pwait","epoll_wait",
+        "eventfd","eventfd2","execve","execveat","exit","exit_group","faccessat","faccessat2",
+        "fadvise64","fallocate","fchdir","fchmod","fchmodat","fchown","fchownat","fcntl",
+        "fdatasync","fgetxattr","flistxattr","flock","fork","fstat","fstatfs","fsync",
+        "ftruncate","futex","futex_waitv","getcwd","getdents","getdents64","getegid","geteuid",
+        "getgid","getgroups","getpeername","getpgrp","getpid","getppid","getpriority",
+        "getrandom","getresgid","getresuid","getrlimit","getrusage","getsid","getsockname",
+        "getsockopt","gettid","gettimeofday","getuid","getxattr","ioctl","kill","lgetxattr",
+        "link","linkat","listen","lseek","lstat","madvise","membarrier","memfd_create",
+        "mkdir","mkdirat","mlock","mmap","mprotect","mremap","msync","munlock","munmap",
+        "nanosleep","newfstatat","open","openat","openat2","pipe","pipe2","poll","ppoll",
+        "prctl","pread64","preadv","preadv2","prlimit64","pselect6","pwrite64","pwritev",
+        "pwritev2","read","readlink","readlinkat","readv","recvfrom","recvmmsg","recvmsg",
+        "rename","renameat","renameat2","rseq","restart_syscall","rmdir","rt_sigaction",
+        "rt_sigpending","rt_sigprocmask","rt_sigqueueinfo","rt_sigreturn","rt_sigsuspend",
+        "rt_sigtimedwait","sched_getaffinity","sched_getparam","sched_get_priority_max",
+        "sched_get_priority_min","sched_getscheduler","sched_yield","select","sendfile",
+        "sendmmsg","sendmsg","sendto","setgid","setgroups","setitimer","setpriority",
+        "setresgid","setresuid","setsid","setsockopt","set_robust_list","set_tid_address",
+        "setuid","shutdown","sigaltstack","socket","socketpair","stat","statfs","statx",
+        "symlink","symlinkat","sync","sync_file_range","sysinfo","tgkill","time","timerfd_create",
+        "timerfd_gettime","timerfd_settime","truncate","umask","uname","unlink","unlinkat",
+        "utimensat","wait4","waitid","write","writev"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}

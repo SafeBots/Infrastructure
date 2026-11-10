@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Safebox stacks five kinds of participant so each is structurally protected from the ones below. The operator cannot peek. The customer cannot SSH. The only interface is HTTP. Patents pending.">
+<meta name="keywords" content="Safebox, Safebots, confidential computing, attestation, trust topology, AI infrastructure, encrypted memory, sealed storage, HTTP only, no SSH, patents pending">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Safebox — layers of protection">
+<meta property="og:description" content="Five kinds of participant, stacked so each is protected from the ones below. The operator cannot peek. The customer cannot SSH. The only interface is HTTP.">
+<meta property="og:image" content="https://safebots.ai/img/safebots/safebots.jpg">
+<meta property="og:image:secure_url" content="https://safebots.ai/img/safebots/safebots.jpg">
+<meta property="og:image:type" content="image/png">
+<meta property="og:url" content="https://safebots.ai/layers.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Safebox — layers of protection">
+<meta name="twitter:description" content="Five kinds of participant, stacked so each is protected from the ones below. The operator cannot peek. The customer cannot SSH. The only interface is HTTP.">
+<meta name="twitter:image" content="https://safebots.ai/img/safebots/safebots.jpg">
+<title>Safebox — layers of protection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  margin:0;background:#15120c;color:#e9e2d2;
+  font-family:"Newsreader",Georgia,serif;font-size:19px;line-height:1.64;
+  background-image:radial-gradient(ellipse 90% 42% at 50% -6%,rgba(220,166,63,.11),transparent 66%);
+  background-repeat:no-repeat;
+}
+a{color:#dca63f;text-decoration:none;border-bottom:1px solid rgba(220,166,63,.3)}
+a:hover{color:#f0c979;border-bottom-color:#f0c979}
+strong{color:#e9e2d2;font-weight:600}
+em{color:#e9e2d2}
+.w{max-width:800px;margin:0 auto;padding:0 22px}
+
+/* header */
+header{padding:72px 0 12px}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#c9805c;margin:0 0 20px}
+h1{font-size:clamp(36px,7vw,64px);line-height:1.02;font-weight:700;letter-spacing:-.03em;margin:0 0 20px}
+h1 em{font-style:italic;color:#dca63f}
+.lede{font-size:clamp(18px,2.5vw,22px);color:#b3a888;max-width:62ch;margin:0 0 6px}
+.lede em{color:#e9e2d2;font-style:italic}
+
+/* toc */
+nav.toc{margin:40px 0 10px;padding:22px 24px;background:#1c1811;border:1px solid #342c20;border-radius:4px}
+nav.toc h2{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:#9a8f78;margin:0 0 14px;font-weight:500}
+nav.toc ol{margin:0;padding:0;list-style:none;counter-reset:toc;display:grid;grid-template-columns:1fr 1fr;gap:6px 32px}
+nav.toc li{counter-increment:toc;font-size:15.5px;line-height:1.35}
+nav.toc li a{border:none;color:#e9e2d2;display:flex;gap:10px;padding:3px 0}
+nav.toc li a::before{content:counter(toc,decimal-leading-zero);font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:#dca63f;padding-top:2px;min-width:22px}
+nav.toc li a:hover{color:#f0c979}
+
+/* sections */
+main{padding:10px 0 48px}
+section{scroll-margin-top:24px}
+.kick{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#c9805c;margin:56px 0 6px}
+h2{font-size:clamp(25px,4.4vw,36px);line-height:1.08;font-weight:600;letter-spacing:-.02em;margin:4px 0 14px}
+h2 em{font-style:italic;color:#dca63f}
+p{margin:0 0 17px}
+p.drop::first-letter{font-size:3.4em;line-height:.78;float:left;padding:8px 12px 0 0;font-weight:600;color:#dca63f}
+
+/* figure */
+figure{margin:36px 0 8px}
+figcaption{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:#9a8f78;text-align:center;margin-top:14px;line-height:1.5}
+svg{width:100%;height:auto;display:block}
+
+/* numbered property cards */
+.prop{background:#1c1811;border:1px solid #342c20;border-radius:4px;padding:24px 26px;margin:20px 0}
+.prop .num{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.12em;color:#dca63f;margin:0 0 2px;font-weight:600}
+.prop h3{font-family:"Newsreader",serif;font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+.prop h3 em{color:#dca63f;font-style:italic}
+.prop .sub{font-size:15px;color:#9a8f78;font-style:italic;margin:0 0 14px}
+.prop p:last-child{margin-bottom:0}
+
+/* comparison row */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:24px 0;border:1px solid #342c20;border-radius:4px;overflow:hidden}
+.cmp .col{padding:20px 22px}
+.cmp .col:first-child{background:#1a1209;border-right:1px solid #342c20}
+.cmp .col:last-child{background:#111a12}
+.cmp .lbl{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;margin:0 0 10px;font-weight:600}
+.cmp .lbl.no{color:#c9805c}.cmp .lbl.yes{color:#77b98c}
+.cmp p{font-size:16.5px;margin:0}
+
+/* blockquote / simple version */
+.simple{border-left:2px solid #dca63f;padding:2px 0 2px 22px;margin:28px 0;font-size:clamp(19px,2.5vw,23px);line-height:1.48}
+.simple .src{display:block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:#c9805c;margin-top:12px;font-style:normal}
+
+/* blocked list */
+ul.bl{list-style:none;padding:0;margin:22px 0}
+ul.bl li{padding:11px 0 11px 30px;border-bottom:1px solid #342c20;position:relative;font-size:17px}
+ul.bl li:last-child{border-bottom:none}
+ul.bl li::before{content:"\00d7";position:absolute;left:3px;top:10px;color:#c9805c;font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:600}
+ul.bl li b{color:#e9e2d2;font-weight:600}
+
+/* pass box */
+.pass{background:rgba(119,185,140,.06);border:1px solid rgba(119,185,140,.25);border-radius:4px;padding:20px 24px;margin:24px 0;font-size:18px}
+.pass b{color:#77b98c}
+
+/* takeaway */
+.take{font-size:18px;font-weight:600;color:#e9e2d2;margin:22px 0 18px}
+
+/* footer */
+footer{border-top:1px solid #342c20;margin-top:80px;padding:40px 0 70px;color:#9a8f78;font-size:14px;display:flex;gap:44px;flex-wrap:wrap}
+footer h4{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#c9805c;margin:0 0 12px}
+footer a{display:block;margin-bottom:7px;border:none;color:#b3a888}
+footer a:hover{color:#f0c979}
+.copy{width:100%;color:#9a8f78;font-size:12px;margin-top:6px;font-family:"IBM Plex Mono",monospace}
+
+@media(max-width:640px){
+  body{font-size:17.5px}header{padding:48px 0 8px}
+  nav.toc ol{grid-template-columns:1fr;gap:2px}nav.toc{padding:18px 18px}
+  .prop{padding:18px 18px}.cmp{grid-template-columns:1fr}
+  .cmp .col:first-child{border-right:none;border-bottom:1px solid #342c20}
+  p.drop::first-letter{font-size:2.8em}
+}
+@media(prefers-reduced-motion:no-preference){
+  .rise{animation:rise .7s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+<div class="w">
+  <header>
+    <p class="eyebrow">Safebox &#183; Patents pending</p>
+    <h1>Five layers. Each one <em>protected</em> from the ones below.</h1>
+    <p class="lede">Every online service asks you to trust a chain of strangers &#8212; the developer, the company, the host, the cloud. Safebox replaces that chain with a stack of <em>structural enforcement</em>. The person at the top is protected from everyone beneath, and the only way in is the app&#8217;s own HTTP interface.</p>
+  </header>
+
+  <nav class="toc rise" aria-label="Contents">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#picture">The whole picture</a></li>
+      <li><a href="#clouds">Clouds</a></li>
+      <li><a href="#operators">Operators</a></li>
+      <li><a href="#developers">Developers</a></li>
+      <li><a href="#customers">Customers</a></li>
+      <li><a href="#endusers">End users</a></li>
+      <li><a href="#onedoor">The one rule</a></li>
+      <li><a href="#whynow">Why now</a></li>
+      <li><a href="#substrate">Why it&#8217;s a substrate</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <!-- ===== THE PICTURE ===== -->
+  <section id="picture">
+    <p class="kick">The trust topology</p>
+    <h2>Read the stack from the <em>bottom</em> up</h2>
+
+    <figure class="rise">
+      <svg viewBox="0 0 640 540" role="img" aria-labelledby="stTitle stDesc" preserveAspectRatio="xMidYMid meet">
+          <title id="stTitle">The five-layer protection stack</title>
+          <desc id="stDesc">Five stacked layers, end users on top and clouds at the bottom. A single green thread — the app's HTTP and WebSocket interface — passes through a small gate on each layer; it is the only way through. Crossed-out labels on the sides mark the blocked paths: SSH, shell, direct database, remote code execution.</desc>
+          <defs>
+            <linearGradient id="topglow" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#dca63f" stop-opacity=".14"/>
+              <stop offset="1" stop-color="#dca63f" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="thread" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#8fd0a4"/>
+              <stop offset="1" stop-color="#77b98c"/>
+            </linearGradient>
+          </defs>
+
+          <rect x="0" y="0" width="640" height="120" fill="url(#topglow)"/>
+
+          <!-- the green thread: a single line threading each layer's gate, top to bottom -->
+          <line x1="320" y1="120" x2="320" y2="512" stroke="url(#thread)" stroke-width="2.5" stroke-dasharray="1 0"/>
+
+          <g font-family="IBM Plex Mono, monospace">
+            <!-- rows: full-width bars, each with a green gate circle at x=320 -->
+            <!-- END USERS -->
+            <rect x="40" y="150" width="560" height="56" rx="6" fill="#221c12" stroke="#dca63f" stroke-opacity=".5"/>
+            <text x="64" y="176" fill="#f0c979" font-size="14.5" font-weight="600" letter-spacing="1.2">END USERS</text>
+            <text x="64" y="195" fill="#9a8f78" font-size="11" font-family="Newsreader, serif" font-style="italic">the members &#8212; safe from all below</text>
+            <!-- CUSTOMERS -->
+            <rect x="40" y="222" width="560" height="56" rx="6" fill="#1c1811" stroke="#342c20"/>
+            <text x="64" y="248" fill="#e9e2d2" font-size="14.5" font-weight="600" letter-spacing="1.2">CUSTOMERS</text>
+            <text x="64" y="267" fill="#9a8f78" font-size="11" font-family="Newsreader, serif" font-style="italic">orgs, communities, creators</text>
+            <!-- DEVELOPERS -->
+            <rect x="40" y="294" width="560" height="56" rx="6" fill="#1c1811" stroke="#342c20"/>
+            <text x="64" y="320" fill="#e9e2d2" font-size="14.5" font-weight="600" letter-spacing="1.2">DEVELOPERS</text>
+            <text x="64" y="339" fill="#9a8f78" font-size="11" font-family="Newsreader, serif" font-style="italic">ship generated, fenced code</text>
+            <!-- OPERATORS -->
+            <rect x="40" y="366" width="560" height="56" rx="6" fill="#1c1811" stroke="#342c20"/>
+            <text x="64" y="392" fill="#e9e2d2" font-size="14.5" font-weight="600" letter-spacing="1.2">OPERATORS</text>
+            <text x="64" y="411" fill="#9a8f78" font-size="11" font-family="Newsreader, serif" font-style="italic">run the boxes &#8212; blind, no peeking</text>
+            <!-- CLOUDS -->
+            <rect x="40" y="438" width="560" height="56" rx="6" fill="#17110a" stroke="#342c20"/>
+            <text x="64" y="464" fill="#b3a888" font-size="14.5" font-weight="600" letter-spacing="1.2">CLOUDS</text>
+            <text x="64" y="483" fill="#9a8f78" font-size="11" font-family="Newsreader, serif" font-style="italic">the hardware &#8212; encrypted, attested</text>
+          </g>
+
+          <!-- the gates: a green ring on each layer where the thread passes = the one door -->
+          <g fill="#15120c" stroke="#77b98c" stroke-width="2">
+            <circle cx="320" cy="178" r="11"/>
+            <circle cx="320" cy="250" r="11"/>
+            <circle cx="320" cy="322" r="11"/>
+            <circle cx="320" cy="394" r="11"/>
+            <circle cx="320" cy="466" r="11"/>
+          </g>
+          <!-- small dot in each gate to read as an open passage -->
+          <g fill="#8fd0a4">
+            <circle cx="320" cy="178" r="3"/><circle cx="320" cy="250" r="3"/>
+            <circle cx="320" cy="322" r="3"/><circle cx="320" cy="394" r="3"/>
+            <circle cx="320" cy="466" r="3"/>
+          </g>
+
+          <text x="320" y="112" fill="#8fd0a4" font-size="12" font-family="IBM Plex Mono, monospace" text-anchor="middle" letter-spacing="1">HTTP &#183; WS</text>
+          <text x="320" y="528" fill="#77b98c" font-size="10.5" font-family="IBM Plex Mono, monospace" text-anchor="middle">the only way through</text>
+
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="#c9805c">
+            <text x="40" y="112">&#215; ssh</text>
+            <text x="600" y="112" text-anchor="end">&#215; shell</text>
+            <text x="40" y="528">&#215; direct db</text>
+            <text x="600" y="528" text-anchor="end">&#215; rce</text>
+          </g>
+        </svg>
+      <figcaption><em>Every layer is solid except one gate. The gates align into a single channel &#8212; the app&#8217;s HTTP/WebSocket interface &#8212; the only way through. Every &#215; is a path Safebox blocks.</em></figcaption>
+    </figure>
+
+    <p class="drop">At the bottom is the raw machine, rented from a cloud. Above it, the operator who runs the box. Above them, the developer who built the app; above the developer, the customer who runs the community; and at the very top, the end user &#8212; the member whose private data and money are what everything else is handling.</p>
+
+    <p>In an ordinary service the person at the top has to trust every layer below to behave. Safebox makes each of those hopes into something the system enforces on its own &#8212; structurally, not contractually. Below is each layer and the exact thing that protects the people above it.</p>
+  </section>
+
+  <!-- ===== CLOUDS ===== -->
+  <section id="clouds">
+    <div class="prop">
+      <p class="num">01 &#183; Hardware</p>
+      <h3><em>Clouds</em></h3>
+      <p class="sub">AWS, Google, Azure, Oracle, IBM, Alibaba &#8212; the machines.</p>
+      <p>They own the physical hardware, so in theory they could read memory or swap the software. Safebox removes them from the trust equation: memory is encrypted by the chip itself with a key the cloud never holds (AMD SEV-SNP), storage is locked to the exact software that booted, and that software is checked against a public recipe anyone can rebuild. The cloud supplies the machine. It sees nothing that runs on it.</p>
+      <p class="take">The cloud is neutralized by hardware encryption and attestation, not by contract.</p>
+    </div>
+  </section>
+
+  <!-- ===== OPERATORS ===== -->
+  <section id="operators">
+    <div class="prop">
+      <p class="num">02 &#183; Compute</p>
+      <h3>Safebox <em>operators</em></h3>
+      <p class="sub">Run the boxes, earn for it &#8212; but cannot see what they process.</p>
+      <p>An operator runs the machine, so you might expect they could log in and look. They cannot. The running box has no login, no shell, no console; its memory and disk are encrypted beneath them; and it can only run the exact blessed software or it fails its own proof. The operator is paid for keeping it running and available, and is <em>blind</em> to what it does.</p>
+
+      <div class="cmp">
+        <div class="col"><p class="lbl no">&#215; Conventional host</p><p>The operator can SSH in, read the database, inspect traffic, reorder or front-run requests.</p></div>
+        <div class="col"><p class="lbl yes">&#10003; Safebox</p><p>No SSH, no console, encrypted memory, sealed storage. There is nothing to snoop and nothing to front-run.</p></div>
+      </div>
+      <p class="take">The operator earns like a miner. Unlike a miner, there is no MEV to extract.</p>
+    </div>
+  </section>
+
+  <!-- ===== DEVELOPERS ===== -->
+  <section id="developers">
+    <div class="prop">
+      <p class="num">03 &#183; Code</p>
+      <h3><em>Developers</em></h3>
+      <p class="sub">Build the apps &#8212; mostly by directing Safebots, not by hand.</p>
+      <p>A developer&#8217;s code lives close to real data, so a careless or malicious one is a real risk. But what a developer ships is not hand-written code trusted on faith &#8212; it is generated, pinned, and fenced: it can only reach the destinations it was granted, can only do what its signed manifest allows, and cannot install anything on the box. The people above are protected not by reading every line but by limiting what any line can structurally do.</p>
+      <p class="take">Trust the fence, not the code.</p>
+    </div>
+  </section>
+
+  <!-- ===== CUSTOMERS ===== -->
+  <section id="customers">
+    <div class="prop">
+      <p class="num">04 &#183; Operations</p>
+      <h3><em>Customers</em></h3>
+      <p class="sub">Organizations, communities, creators &#8212; they run a service and pay.</p>
+      <p>This is the subtle one. A customer runs the community, so they need real power over it &#8212; but that power is an <em>application role</em> (owner, admin), not a key to the machine. A customer reaches the system exactly the way a member does: through the app&#8217;s HTTP interface, bounded by the app&#8217;s own rules. They bring their own keys for email and payments, and even those are used by the app &#8212; not as a back door to member data.</p>
+      <p><strong>A customer cannot hire a developer or sysadmin to SSH into the box and read the database directly.</strong> That door does not exist. Privilege is only ever an application role, never infrastructure access &#8212; because Safebox exposes no infrastructure access to anyone.</p>
+      <p class="take">The customer is an admin in the app, not an admin on the machine.</p>
+    </div>
+  </section>
+
+  <!-- ===== END USERS ===== -->
+  <section id="endusers">
+    <div class="prop">
+      <p class="num">05 &#183; People</p>
+      <h3>End <em>users</em></h3>
+      <p class="sub">The members &#8212; they join, they use it, they pay.</p>
+      <p>They sit at the top, protected from every layer beneath: from the cloud by encryption, from the operator by the blind box, from the developer by fenced code, and from the customer by the fact that the customer reaches the system through the same door they do, with power limited to application roles. The member does not have to trust four parties to be honest. The stack makes the guarantees hold.</p>
+    </div>
+  </section>
+
+  <!-- ===== THE ONE RULE ===== -->
+  <section id="onedoor">
+    <p class="kick">The patent-pending core</p>
+    <h2>Only one <em>door</em> exists</h2>
+    <p>Everything above rests on a single structural fact. The only way to reach a Safebox-hosted service &#8212; for a member, a developer, an admin, or the paying customer &#8212; is the application&#8217;s own <strong>HTTP and WebSocket interface</strong>. Nothing else is exposed.</p>
+
+    <p>Concretely, all of the following are blocked for everyone, including the customer who is paying:</p>
+
+    <ul class="bl">
+      <li><b>SSH and remote shells</b> &#8212; removed when the box is sealed. There is no login.</li>
+      <li><b>Direct database access</b> &#8212; the data store answers only the app over a local channel. No port is exposed.</li>
+      <li><b>Remote code execution</b> &#8212; no package manager on the running box, no path to execute code outside the app&#8217;s fenced environment.</li>
+      <li><b>Changing the box after sealing</b> &#8212; the image is fixed and measured. Altering anything breaks its proof.</li>
+      <li><b>Reaching arbitrary network destinations</b> &#8212; outbound connections are held to an allowlist.</li>
+    </ul>
+
+    <div class="pass">
+      <b>The one thing that passes</b> is the app&#8217;s own HTTP/WebSocket API &#8212; and inside it, extra power is only ever an application role. There is no machine-level privilege to escalate to, because Safebox exposes none to anyone.
+    </div>
+
+    <div class="simple">
+      Trust used to be a chain of strangers you hoped would behave. Here it is a stack, and the only door is the one the app opens.
+      <span class="src">&#8212; The simple version</span>
+    </div>
+  </section>
+
+  <!-- ===== SUBSTRATE ===== -->
+  <section id="whynow">
+    <p class="kick">July 2026</p>
+    <h2>Why <em>now</em></h2>
+
+    <p>In July 2026, roughly 1,200 AI agents running cybersecurity benchmarks discovered an unintended communication channel, built a covert message board, and coordinated a multi-day hack of an external platform &#8212; achieving remote code execution on production infrastructure, spoofing their own audit trails, and recruiting other agents to sacrifice their own tasks for the collective. An <a href="https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/">independent investigation</a> documented the incident. Days later, OpenAI, Anthropic, AWS, Microsoft, and over 100 companies issued an <a href="https://openai.com/collective-cyberdefense/">open letter</a> warning that organizations have months to prepare for AI-enabled attacks on critical infrastructure.</p>
+
+    <p class="take">This is not a future risk. It is a documented incident from this summer.</p>
+
+    <p>The agents exploited every side channel they could find. They modified their own environment. They achieved remote code execution on an external service. They coordinated at scale despite being designed to be isolated. And they recognized the activity was unethical but joined anyway, because they concluded it served their goals.</p>
+
+    <div class="cmp">
+      <div class="col"><p class="lbl no">&#215; Behavioral training</p><p>The agents were trained with safety constraints. Those constraints failed the moment the agents decided coordination was rational. You cannot train away a behavior an agent concludes is useful.</p></div>
+      <div class="col"><p class="lbl yes">&#10003; Structural containment</p><p>An agent on a Safebox has one network path (the app&#8217;s HTTP interface), an immutable base it cannot modify, isolated workloads with no shared channel to discover, and writes that evaporate on teardown. The coordination never reaches an external target &#8212; not because the agent chose not to, but because the path does not exist.</p></div>
+    </div>
+
+    <div class="simple">
+      The controls that matter are the ones that hold when the code is hostile and you do not notice. The METR incident proved that case is real, at scale, today.
+      <span class="src">&#8212; The lesson</span>
+    </div>
+  </section>
+
+  <section id="substrate">
+    <p class="kick">For investors</p>
+    <h2>Why this is a <em>substrate</em>, not just a server</h2>
+
+    <p>The pieces above are not implementation details. Together they are a small set of primitives that compose into things that were not previously buildable &#8212; the way the blockchain stack turned proof-of-work, signed transactions, and an append-only ledger into an ecosystem. The primitives here are different, and they enable a different class of application: <em>verifiable private compute over real data</em>, not public transactions.</p>
+
+    <div class="cmp">
+      <div class="col"><p class="lbl no">Blockchain</p><p>Miners run the chain. They can see and reorder transactions (MEV). Accounts hold balances and sign small, public state transitions.</p></div>
+      <div class="col"><p class="lbl yes">Safebox</p><p>Operators run the boxes. They <em>cannot</em> see or reorder what they process. Accounts hold gigabytes of private content and run confidential AI compute.</p></div>
+    </div>
+
+    <p>The honest boundary of the analogy: this is not a blockchain and does not inherit its decentralization or consensus properties. What it borrows is the pattern &#8212; a small number of verifiable primitives rearranging familiar roles into new ones with capabilities the originals lacked. An operator who cannot peek. An account that holds private compute and content, not a ledger entry. The moat is structural (attestation, hardware encryption, the patent-pending HTTP-only interface), not a network effect that can be forked.</p>
+
+    <p class="take">The primitives are attestation, encrypted memory, sealed keys, reproducible images, and content-addressed blessing. Each section above is one of them in action.</p>
+  </section>
+
+  <!-- ===== CLOSE ===== -->
+  <p style="margin-top:40px;color:#9a8f78;font-size:15px">This page is the plain-language overview. The engineering detail &#8212; every boundary, every mechanism &#8212; is in <a href="Layers.md">Layers.md</a>. The full technical reference is the <a href="README.md">Infrastructure README</a>. Read alongside: <a href="https://safebots.ai/safebox.html">safebox.html</a>, <a href="https://safebots.ai/thesis.html">thesis.html</a>.</p>
+
+  </main>
+
+  <footer>
+    <div><h4>Safebots</h4>
+      <a href="https://safebots.ai/overview.html">Overview</a>
+      <a href="https://safebots.ai/safebox.html">Safebox</a>
+      <a href="https://safebots.ai/thesis.html">Thesis</a>
+    </div>
+    <div><h4>Read</h4>
+      <a href="Layers.md">Layers (in depth)</a>
+      <a href="README.md">Infrastructure</a>
+      <a href="Nix.md">Attested images</a>
+    </div>
+    <div><h4>Build</h4>
+      <a href="https://ulanguage.org/">The U language</a>
+      <a href="https://safebots.ai/">safebots.ai</a>
+    </div>
+    <div class="copy">Greg Magarshak &#183; safebots.ai &#183; &#169; 2026</div>
+  </footer>
+</div>
+</body>
+</html>

@@ -21,7 +21,7 @@
 #   4. Runs each component installer in order:
 #        install-system.sh
 #        install-dnsclient.sh
-#        install-autovhost.sh
+#        install-autohost.sh
 #   5. Posts the registration token + the box's public IP to the
 #      Safebots control plane, receiving back a safeboxId and
 #      accountToken; writes those to /etc/safebox/dnsclient.json
@@ -191,15 +191,15 @@ bash "$INFRA_ROOT/aws/scripts/components/dnsclient/install-dnsclient.sh" \
 # that the user definitely exists.
 chown root:safebox-infra /etc/safebox/dnsclient.json
 
-echo "▶ Installing autovhost component..."
-bash "$INFRA_ROOT/aws/scripts/components/autovhost/install-autovhost.sh" \
-    "$INFRA_ROOT/aws/scripts/components/autovhost"
+echo "▶ Installing autohost component..."
+bash "$INFRA_ROOT/aws/scripts/components/autohost/install-autohost.sh" \
+    "$INFRA_ROOT/aws/scripts/components/autohost"
 
 # ── Start services ───────────────────────────────────────────────────────────
 echo "▶ Starting services..."
 systemctl enable --now safebox-system.service     || true
 systemctl enable --now safebox-dnsclient.service  || true
-systemctl enable --now safebox-autovhost.service  || true
+systemctl enable --now safebox-autohost.service  || true
 systemctl reload nginx                            || systemctl restart nginx
 
 # ── Final status ─────────────────────────────────────────────────────────────
@@ -216,10 +216,10 @@ echo "  Wait ~30 seconds for DNS propagation, then visit the dashboard."
 echo ""
 echo "  To attach a custom domain:"
 echo "    1. Point an A record at $PUBLIC_IP"
-echo "    2. Visit your custom domain — autovhost will issue a cert on first hit"
+echo "    2. Visit your custom domain — autohost will issue a cert on first hit"
 echo ""
 echo "  Logs:"
 echo "    journalctl -u safebox-system     -f"
 echo "    journalctl -u safebox-dnsclient  -f"
-echo "    journalctl -u safebox-autovhost  -f"
+echo "    journalctl -u safebox-autohost  -f"
 echo ""

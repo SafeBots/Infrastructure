@@ -1,0 +1,38 @@
+{
+    "name":         "chatterbox-multilingual",
+    "manifestHash": "",
+    "version":      "v3",
+    "vendor":       "Resemble AI",
+    "license":      "MIT",
+    "licenseNote":  "COMMERCIAL-OK. MIT — commercial + closed-source use permitted. Clears Safebux serving and redistribution.",
+    "homepage":     "https://huggingface.co/ResembleAI/chatterbox",
+    "gitRevision":  "PIN_ME_verify_on_hf",
+    "weights": [
+        {
+            "file":   "CAPTURE_from_index_at_build.safetensors",
+            "bytes":  0,
+            "sha256": "CAPTURE_FROM_HF_AT_PINNED_REV",
+            "cid":    "ADD_AFTER_IPFS_PIN",
+            "note":   "Capture per-file SHA-256 from the repo file list at the pinned revision at build.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/chatterbox-multilingual/",
+                "https://huggingface.co/ResembleAI/chatterbox/resolve/PIN_ME_verify_on_hf/"
+            ]
+        }
+    ],
+    "capabilities": {
+        "speech":     true,
+        "voiceClone": true,
+        "emotion":    true,
+        "streaming":  true,
+        "languages":  ["ar","da","de","el","en","es","fi","fr","he","hi","it","ja","ko","ms","nl","no","pl","pt","ru","sv","sw","tr","zh"]
+    },
+    "resources": {
+        "minGpuMemoryGb":     8,
+        "recommendedGpu":     "1x consumer/prosumer GPU. Larger than Turbo (full Chatterbox base).",
+        "approximateLoadSec": 25
+    },
+    "watermark": "PerTh neural watermark on every output (see chatterbox-turbo).",
+    "notes": "Chatterbox base / Multilingual (23 languages), MIT. Use when you need commercial-safe MULTILINGUAL cloning+emotion. Emotion-exaggeration control (single param, monotone->dramatic). Same PerTh watermark caveat as Turbo. Verify current revision on HF before build."
+}

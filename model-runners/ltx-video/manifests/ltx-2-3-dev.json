@@ -1,0 +1,47 @@
+{
+    "name":              "ltx-2-3-dev",
+    "manifestHash":      "",
+    "version":           "2.3",
+    "vendor":            "Lightricks",
+    "license":           "Apache-2.0",
+    "homepage":          "https://huggingface.co/Lightricks/LTX-Video",
+
+    "ltxVideo": {
+        "huggingfaceModel": "Lightricks/LTX-Video",
+        "variant":          "dev",
+        "defaultWidth":     1216,
+        "defaultHeight":    704,
+        "defaultNumFrames": 121,
+        "defaultFps":       30,
+        "defaultSteps":     30,
+        "defaultGuidance":  4.5,
+        "maxNumFrames":     481
+    },
+
+    "capabilities": {
+        "text2video":   true,
+        "image2video":  true,
+        "video2video":  false,
+        "audio":        true,
+        "streaming":    false,
+        "outputFormats": ["mp4"]
+    },
+
+    "audio": {
+        "supported":            true,
+        "defaultModalityScale": 3.0,
+        "sampleRate":           44100,
+        "channels":             2,
+        "codec":                "aac"
+    },
+
+    "resources": {
+        "minGpuMemoryGb":     24,
+        "recommendedGpu":     "1× RTX 4090 24GB / 1× A100 40GB / 1× H100 80GB",
+        "approximateLoadSec": 90,
+        "diskSizeGb":         50,
+        "videoSecondsTypical": "~60-180s per 5s clip on RTX 4090; ~30-90s on A100/H100"
+    },
+
+    "notes": "Full-quality LTX-2.3 — 22B-parameter base, 30-step inference, higher resolution defaults (1216×704 @ 30fps), synchronized audio generation. Use when output quality matters more than iteration speed (final renders, hero content, production deliverables). Requires 24GB+ VRAM; the runner enables cpu offload automatically on the dev variant to keep it usable on RTX 4090. For iteration work, use ltx-2-3-distilled instead. Same Apache 2.0 license."
+}

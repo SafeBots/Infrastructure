@@ -1,0 +1,26 @@
+{
+  "_comment": "Interceptor policy for the inspection sandbox. The interceptor terminates the inner VM's TLS, reads plaintext, applies this policy, and re-originates a validated TLS connection outward. v0 adopts a mature MITM (mitmproxy/Go); Turn 4 replaces it with the U-written, capability-bounded, M-of-N-blessed version.",
+  "allowlist_hosts": [
+    "registry.npmjs.org",
+    "pypi.org",
+    "files.pythonhosted.org",
+    "github.com",
+    "codeload.github.com"
+  ],
+  "deny_default": true,
+  "volume_metering": {
+    "per_host_bytes_out_limit": 52428800,
+    "total_bytes_out_limit": 268435456,
+    "note": "Content visibility narrows but does not close covert-channel exfil; metering bounds it. Trip the limit -> quarantine the job."
+  },
+  "audit": {
+    "log_plaintext_hashes": true,
+    "log_full_plaintext": false,
+    "note": "Default logs request metadata + SHA-256 of bodies (accountability without hoarding plaintext). Full-plaintext capture is opt-in per investigation."
+  },
+  "tls": {
+    "own_ca": true,
+    "mint_per_host_certs": true,
+    "pinning_contract": "standard validation -> transparent; TOFU -> pins to interceptor; baked-in pin you built -> don't bake it; baked-in pin in 3rd-party binary -> fails by design, treated as signal. Never patch the binary to defeat pinning."
+  }
+}

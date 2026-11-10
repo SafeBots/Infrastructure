@@ -1,0 +1,39 @@
+{
+    "name":         "higgs-audio-v2-3b",
+    "manifestHash": "",
+    "version":      "v2-generation-3B-base",
+    "vendor":       "Boson AI (bosonai)",
+    "license":      "Apache-2.0",
+    "licenseNote":  "COMMERCIAL-OK — but ONLY v2. *** DO NOT use Higgs Audio v3 (bosonai/higgs-audio-v3-tts-4b): v3 is the 'Boson Higgs Audio v3 Research and Non-Commercial License' — production/hosted-API/revenue use requires a SEPARATE commercial license and is DISQUALIFIED for Safebux serving. This manifest pins v2, which is Apache-2.0. Verify the v2 repo's LICENSE file before mirroring.",
+    "homepage":     "https://huggingface.co/bosonai/higgs-audio-v2-generation-3B-base",
+    "gitRevision":  "PIN_ME_verify_on_hf",
+    "weights": [
+        {
+            "file":   "CAPTURE_from_index_at_build.safetensors",
+            "bytes":  0,
+            "sha256": "CAPTURE_FROM_HF_AT_PINNED_REV",
+            "cid":    "ADD_AFTER_IPFS_PIN",
+            "note":   "Built on Llama-3.2-3B. Also needs the Higgs audio tokenizer weights — capture those hashes too. Capture per-shard SHA-256 from the index at the pinned revision.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/higgs-audio-v2-3b/",
+                "https://huggingface.co/bosonai/higgs-audio-v2-generation-3B-base/resolve/PIN_ME_verify_on_hf/"
+            ]
+        }
+    ],
+    "capabilities": {
+        "speech":         true,
+        "voiceClone":     true,
+        "emotion":        true,
+        "streaming":      true,
+        "multiSpeaker":   true,
+        "backgroundMusic": true,
+        "languages":      ["multi"]
+    },
+    "resources": {
+        "minGpuMemoryGb":     16,
+        "recommendedGpu":     "1x H100-class for full throughput (vendor benchmarks on 1x H100). Larger than Chatterbox/Orpheus.",
+        "approximateLoadSec": 60
+    },
+    "notes": "Higgs Audio v2 (Boson AI), Apache-2.0, built on Llama-3.2-3B, pretrained on 10M+ hours. The commercial-safe NATURALNESS/quality tier: expressive generation, multi-speaker dialogue, prosody adaptation, even simultaneous speech+background-music. Vendor reports ~75.7%/55.7% win vs gpt-4o-mini-tts on Emotions/Questions (vendor-run — A/B yourself). Servable via vLLM-Omni (OpenAI-compatible /v1/audio/speech). CRITICAL: this is v2 (Apache); v3 is non-commercial — do not silently upgrade."
+}

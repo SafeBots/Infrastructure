@@ -1,0 +1,49 @@
+{
+    "name": "kimi-k3",
+    "vllmModel": "moonshotai/Kimi-K3",
+    "manifestHash": "",
+    "version": "K3",
+    "vendor": "Moonshot AI (Beijing)",
+    "license": "Modified MIT \u2014 VERIFY commercial terms before serving (Safebux-metered inference may be restricted; read Section 2 of the LICENSE)",
+    "homepage": "https://huggingface.co/moonshotai/Kimi-K3",
+    "weights": [
+        {
+            "file": "model-NNNNN-of-000NN.safetensors",
+            "bytes": 0,
+            "sha256": "CAPTURE_FROM_INDEX_AT_BUILD",
+            "cid": "ADD_AFTER_IPFS_PIN",
+            "note": "2.8T MoE \u2014 many shards. Capture SHA-256 from the index at the pinned revision.",
+            "sources": [
+                "ipfs://ADD_AFTER_IPFS_PIN",
+                "https://mirror.safecloud.example/models/kimi-k3/",
+                "https://huggingface.co/moonshotai/Kimi-K3/resolve/PIN_ME_verify_on_hf/"
+            ]
+        }
+    ],
+    "vllm": {
+        "tensorParallelSize": 8,
+        "maxModelLen": 262144,
+        "dtype": "bfloat16",
+        "quantization": "",
+        "gpuMemoryUtilization": 0.92,
+        "trustRemoteCode": true,
+        "enforceEager": false,
+        "extraFlags": [
+            "--enable-prefix-caching"
+        ]
+    },
+    "capabilities": {
+        "chat": true,
+        "complete": true,
+        "embed": false,
+        "toolUse": true,
+        "vision": true
+    },
+    "resources": {
+        "minGpuMemoryGb": 5120,
+        "recommendedGpu": "Multi-node: 64\u00d7 H100 80GB class (2.8T params, ~104B active MoE). NOT a single-box model.",
+        "approximateLoadSec": 900
+    },
+    "notes": "2.8T-parameter MoE (~104B active), 1M-token context, native multimodal. Largest open-weight model as of 2026-07-27. THREE cautions before approving an install: (1) LICENSE is Modified MIT \u2014 verify commercial/inference-resale terms, this is Safebux-relevant. (2) trustRemoteCode=true ships custom Python \u2014 pin the repo by git REVISION and review the source, not just the weight hashes. (3) Beijing-origin frontier model \u2014 export-control sensitivity applies, and it CANNOT serve as an independent-lineage auditor voter (concordance requires lineage independence). Multi-node rack scale \u2014 GPU profile only.",
+    "gitRevision": "PIN_ME_verify_on_hf"
+}

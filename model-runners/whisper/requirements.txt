@@ -1,0 +1,8 @@
+# Faster-Whisper — CTranslate2-based, 4x faster than reference Whisper.
+# Pulls in ctranslate2, onnxruntime (for Silero VAD), and tokenizers transitively.
+faster-whisper>=1.1.0
+
+# Safebox FastAPI service stack
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0

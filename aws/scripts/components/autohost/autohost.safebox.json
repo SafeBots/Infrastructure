@@ -1,0 +1,26 @@
+{
+  "_comment": "Safebox config for Autohost. Installed to /etc/safebox/autohost.json. Maps Safebox conventions (paths, socket, IP discovery) onto Autohost's config surface. See MIGRATION-autovhost-to-autohost.md for the full mapping and rationale.",
+
+  "engine": "nginx",
+  "provider": "letsencrypt",
+  "acmeContactEmail": null,
+  "acmeStaging": false,
+
+  "socketPath": "/run/safebox/autohost.sock",
+  "vhostDir": "/etc/nginx/conf.d/auto",
+  "certDir": "/etc/nginx/conf.d/auto-certs",
+  "acmeChallengesRoot": "/var/lib/safebox/autohost",
+  "acmeAccountKeyPath": "/var/lib/safebox/autohost/acme-account.key",
+  "vhostTemplatePath": "/etc/safebox/autohost-vhost-template.conf",
+
+  "proxyTarget": "127.0.0.1:3000",
+
+  "perIpLimitPerHour": 10,
+  "perDomainLimitPerHour": 10,
+  "globalLimitPerHour": 100,
+
+  "_authorizeHook_comment": "Set to /etc/safebox/autohost-authorize-hook.js to enforce Safebox project/quota/token governance on provisioning. Left null for 1.0 (DNS-check + rate limit only); this is the seam for the projects/domains/quota control plane.",
+  "authorizeHook": null,
+
+  "dnsResolvers": ["system", "1.1.1.1", "8.8.8.8"]
+}
