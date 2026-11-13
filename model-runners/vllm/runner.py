@@ -138,6 +138,7 @@ class ChatRequest(BaseModel):
     stop:           Optional[Union[str, List[str]]] = None
     stream:         Optional[bool]  = False
     seed:           Optional[int]   = None
+    seedMode:       Optional[str]   = None   # "deterministic" → derive seed from HMAC key + request
     presencePenalty:  Optional[float] = None
     frequencyPenalty: Optional[float] = None
     tools:          Optional[List[Dict[str, Any]]] = None
@@ -155,6 +156,7 @@ class CompleteRequest(BaseModel):
     stop:         Optional[Union[str, List[str]]] = None
     stream:       Optional[bool]  = False
     seed:         Optional[int]   = None
+    seedMode:     Optional[str]   = None   # "deterministic" → derive seed from HMAC key + request
     n:            Optional[int]   = 1
 
 class EmbedRequest(BaseModel):
@@ -172,7 +174,7 @@ app = FastAPI(title="vLLM Safebox Runner", version="1.2")
 # ── Shared canonical HMAC (single source of truth) ──────────────────────
 # safebox_auth.py is vendored beside runner.py from model-runners/_shared/
 # via sync-shared.sh, and COPYed into /app/ by the Dockerfile.
-from safebox_auth import verify_hmac as _sb_verify  # noqa: E402
+from safebox_auth import verify_hmac as _sb_verify, derive_deterministic_seed, strip_seed_from_body  # noqa: E402
 
 def verify_hmac(request: Request, body: bytes) -> bool:
     # Canonical HMAC verification lives in ONE place: model-runners/_shared/
@@ -408,6 +410,8 @@ async def v1_chat(request: Request):
 
     try:
         req = ChatRequest(**json.loads(body_bytes))
+        if req.seedMode == "deterministic" and req.seed is None:
+            req.seed = derive_deterministic_seed(strip_seed_from_body(body_bytes))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad request: {e}")
 
@@ -480,6 +484,8 @@ async def v1_complete(request: Request):
 
     try:
         req = CompleteRequest(**json.loads(body_bytes))
+        if req.seedMode == "deterministic" and req.seed is None:
+            req.seed = derive_deterministic_seed(strip_seed_from_body(body_bytes))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad request: {e}")
 

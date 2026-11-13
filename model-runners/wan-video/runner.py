@@ -47,7 +47,7 @@ import uvicorn
 
 # Import shared HMAC auth
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from safebox_auth import verify_hmac
+from safebox_auth import verify_hmac, derive_deterministic_seed, strip_seed_from_body
 
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,14 @@ LISTEN_HOST = os.environ.get("WAN_VIDEO_HOST", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("WAN_VIDEO_PORT", "7792"))
 
 PIPELINE_NAMES = {"all", "t2v", "i2v", "flf2v", "v2v", "vace"}
+
+
+def _apply_deterministic_seed(req, request: Request):
+    """If seedMode is deterministic and no explicit seed, derive one from HMAC key + request body."""
+    if getattr(req, "seedMode", None) == "deterministic" and req.seed is None:
+        # FastAPI already consumed the body; reconstruct from the parsed model.
+        body_bytes = req.model_dump_json(exclude={"seed", "seedMode"}).encode()
+        req.seed = derive_deterministic_seed(body_bytes)
 VARIANT_14B_ONLY = {"i2v", "flf2v", "v2v"}
 CONTROL_TYPES = {"depth", "pose", "sketch", "flow", "scribble", "inpaint", "outpaint", "reference"}
 
@@ -132,6 +140,7 @@ class GenerateRequest(BaseModel):
     height: int = Field(default=720, ge=256, le=1080)
     numFrames: int = Field(default=81, ge=1, le=257)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
+    seedMode: Optional[str] = None   # "deterministic" → derive seed from HMAC key + request
     guidanceScale: float = Field(default=5.5, ge=1.0, le=20.0)
     numInferenceSteps: int = Field(default=50, ge=1, le=200)
 
@@ -144,6 +153,7 @@ class AnimateRequest(BaseModel):
     height: int = Field(default=720, ge=256, le=1080)
     numFrames: int = Field(default=81, ge=1, le=257)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
+    seedMode: Optional[str] = None
     guidanceScale: float = Field(default=5.5, ge=1.0, le=20.0)
     numInferenceSteps: int = Field(default=50, ge=1, le=200)
 
@@ -157,6 +167,7 @@ class InterpolateRequest(BaseModel):
     height: int = Field(default=720, ge=256, le=1080)
     numFrames: int = Field(default=81, ge=1, le=257)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
+    seedMode: Optional[str] = None
     guidanceScale: float = Field(default=5.5, ge=1.0, le=20.0)
     numInferenceSteps: int = Field(default=50, ge=1, le=200)
 
@@ -167,6 +178,7 @@ class RestyleRequest(BaseModel):
     video: str = Field(..., description="Base64-encoded MP4 of the source video")
     strength: float = Field(default=0.8, ge=0.0, le=1.0)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
+    seedMode: Optional[str] = None
     guidanceScale: float = Field(default=5.5, ge=1.0, le=20.0)
     numInferenceSteps: int = Field(default=50, ge=1, le=200)
 
@@ -180,6 +192,7 @@ class ControlRequest(BaseModel):
     height: int = Field(default=720, ge=256, le=1080)
     numFrames: int = Field(default=81, ge=1, le=257)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
+    seedMode: Optional[str] = None
     guidanceScale: float = Field(default=5.5, ge=1.0, le=20.0)
     numInferenceSteps: int = Field(default=50, ge=1, le=200)
 
@@ -298,6 +311,7 @@ def capacity() -> dict:
 
 @app.post("/v1/video/generate")
 def generate(req: GenerateRequest, request: Request) -> Response:
+    _apply_deterministic_seed(req, request)
     if not pipeline_enabled("t2v"):
         raise HTTPException(status_code=404, detail="T2V pipeline not enabled on this runner")
     if _config is None or _model_dir is None:
@@ -319,6 +333,7 @@ def generate(req: GenerateRequest, request: Request) -> Response:
 
 @app.post("/v1/video/animate")
 def animate(req: AnimateRequest, request: Request) -> Response:
+    _apply_deterministic_seed(req, request)
     if not pipeline_enabled("i2v"):
         raise HTTPException(status_code=404, detail="I2V pipeline not enabled (requires 14B)")
     if _config is None or _model_dir is None:
@@ -335,6 +350,7 @@ def animate(req: AnimateRequest, request: Request) -> Response:
 
 @app.post("/v1/video/interpolate")
 def interpolate(req: InterpolateRequest, request: Request) -> Response:
+    _apply_deterministic_seed(req, request)
     if not pipeline_enabled("flf2v"):
         raise HTTPException(status_code=404, detail="FLF2V pipeline not enabled (requires 14B)")
     if _config is None or _model_dir is None:
@@ -351,6 +367,7 @@ def interpolate(req: InterpolateRequest, request: Request) -> Response:
 
 @app.post("/v1/video/restyle")
 def restyle(req: RestyleRequest, request: Request) -> Response:
+    _apply_deterministic_seed(req, request)
     if not pipeline_enabled("v2v"):
         raise HTTPException(status_code=404, detail="V2V pipeline not enabled (requires 14B)")
     if _config is None or _model_dir is None:
@@ -367,6 +384,7 @@ def restyle(req: RestyleRequest, request: Request) -> Response:
 
 @app.post("/v1/video/control")
 def control(req: ControlRequest, request: Request) -> Response:
+    _apply_deterministic_seed(req, request)
     if not pipeline_enabled("vace"):
         raise HTTPException(status_code=404, detail="VACE pipeline not enabled on this runner")
     if _config is None or _model_dir is None:

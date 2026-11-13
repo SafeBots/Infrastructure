@@ -138,3 +138,65 @@ def verify_hmac(request, body: bytes, hmac_key: Optional[str] = None) -> bool:
         for _ in range(NONCE_CACHE_EVICT):
             _seen_nonces.popitem(last=False)
     return True
+
+
+# ── Deterministic seed derivation ─────────────────────────────────────
+#
+# When seed_mode == "deterministic", runners derive a reproducible seed
+# from the HMAC key (per-tenant, TPM-sealed) and the request content.
+# The tenant can't predict the seed (they don't have the key). Two
+# Safeboxes with the same image and the same request produce the same
+# seed, enabling third-party reproducibility verification.
+#
+# The HMAC key is already loaded for auth — no new secrets needed.
+# This function is called by runners AFTER verify_hmac succeeds, so the
+# request is already authenticated.
+
+def derive_deterministic_seed(request_body: bytes,
+                              hmac_key: Optional[str] = None,
+                              max_val: int = 2**31 - 1) -> int:
+    """Derive a deterministic seed from the HMAC key and request body.
+
+    The seed is HMAC-SHA256(key, SHA256(body)), truncated to an integer
+    in [0, max_val]. The body hash ensures different requests produce
+    different seeds; the HMAC key ensures the tenant can't predict or
+    choose the seed.
+
+    Args:
+        request_body: raw request bytes (the seed field, if present,
+                      should be stripped or set to None before hashing
+                      so the derivation is independent of seed choice)
+        hmac_key:     explicit key; if omitted, uses the cached key
+        max_val:      upper bound for the returned int (default 2^31-1,
+                      compatible with torch.manual_seed and numpy)
+
+    Returns:
+        Deterministic int in [0, max_val].
+    """
+    if hmac_key is None:
+        hmac_key = _key()
+    if not hmac_key:
+        raise RuntimeError("derive_deterministic_seed: no HMAC key available")
+    body_hash = hashlib.sha256(request_body).digest()
+    derived = hmac.new(hmac_key.encode(), body_hash, hashlib.sha256).digest()
+    return int.from_bytes(derived[:8], "big") % (max_val + 1)
+
+
+def strip_seed_from_body(body: bytes) -> bytes:
+    """Remove the 'seed' and 'seedMode' fields from a JSON body for
+    deterministic seed derivation. The derivation must be independent of
+    the seed value itself (otherwise it would be circular) and of the
+    seedMode flag (so the same logical request produces the same seed
+    regardless of mode).
+
+    Returns the body with those fields removed, or the original body if
+    parsing fails (non-JSON bodies are hashed as-is).
+    """
+    import json
+    try:
+        obj = json.loads(body)
+        obj.pop("seed", None)
+        obj.pop("seedMode", None)
+        return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+    except (json.JSONDecodeError, AttributeError):
+        return body

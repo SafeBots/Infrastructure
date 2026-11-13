@@ -155,6 +155,7 @@ class ImageGenerateRequest(BaseModel):
     steps:          Optional[int] = None
     guidance:       Optional[float] = Field(None, description="CFG scale (SDXL) or distilled guidance (FLUX)")
     seed:           Optional[int] = None
+    seedMode:       Optional[str] = None   # "deterministic" → derive seed from HMAC key + request
     batchSize:      Optional[int] = 1
     sampler:        Optional[str] = None
     scheduler:      Optional[str] = None
@@ -171,7 +172,7 @@ app = FastAPI(title="ComfyUI Safebox Runner", version="1.0")
 # ── Shared canonical HMAC (single source of truth) ──────────────────────
 # safebox_auth.py is vendored beside runner.py from model-runners/_shared/
 # via sync-shared.sh, and COPYed into /app/ by the Dockerfile.
-from safebox_auth import verify_hmac as _sb_verify  # noqa: E402
+from safebox_auth import verify_hmac as _sb_verify, derive_deterministic_seed, strip_seed_from_body  # noqa: E402
 
 def verify_hmac(request: Request, body: bytes) -> bool:
     # Canonical HMAC verification lives in ONE place: model-runners/_shared/
@@ -403,6 +404,8 @@ async def v1_image_generate(request: Request):
 
     try:
         req = ImageGenerateRequest(**json.loads(body_bytes))
+        if req.seedMode == "deterministic" and req.seed is None:
+            req.seed = derive_deterministic_seed(strip_seed_from_body(body_bytes))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad request: {e}")
 

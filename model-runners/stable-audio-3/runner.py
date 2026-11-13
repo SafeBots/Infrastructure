@@ -37,7 +37,7 @@ import uvicorn
 
 # Import shared HMAC auth
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from safebox_auth import verify_hmac
+from safebox_auth import verify_hmac, derive_deterministic_seed, strip_seed_from_body
 
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,7 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2048)
     durationSeconds: float = Field(..., ge=0.5, le=380.0)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
+    seedMode: Optional[str] = None   # "deterministic" → derive seed from HMAC key + request
     samplingSteps: int = Field(default=8, ge=1, le=64)
 
 
@@ -160,6 +161,9 @@ def healthz() -> dict:
 
 @app.post("/v1/audio/generate")
 def generate(req: GenerateRequest, request: Request) -> Response:
+    if getattr(req, "seedMode", None) == "deterministic" and req.seed is None:
+        body_bytes = req.model_dump_json(exclude={"seed", "seedMode"}).encode()
+        req.seed = derive_deterministic_seed(body_bytes)
     if _config is None or _model_dir is None:
         raise HTTPException(status_code=503, detail="runner not initialized")
 
