@@ -338,6 +338,32 @@ For workloads that span multiple Safeboxes (e.g., an app on Safebox A that needs
 
 See the [Safenet README](https://github.com/Safebots/Safenet) and [Safenet PROTOCOL.md](https://github.com/Safebots/Safenet/blob/main/PROTOCOL.md) for the full protocol specification.
 
+## On-Premises Deployment Trust Model
+
+Safebox does not require cloud infrastructure. A bare-metal server with a TPM 2.0 chip provides equivalent or stronger trust properties than a cloud deployment, because there is no hypervisor between the measurement and the hardware.
+
+### Three deployment tiers
+
+**Your own Safebox on your own hardware** — strongest for self-hosted workloads. Physical TPM 2.0, no cloud provider in the trust chain, you control physical security. The dm-verity root, Software Signer, M-of-N governance, and egress control work identically on bare metal.
+
+**Your Safebox on a major cloud** — required when third parties need to trust your Safebox without trusting your physical security. The cloud provider is a neutral third party: with confidential compute (SEV-SNP/TDX), neither you nor the cloud provider can tamper with the running VM undetected. The attestation chain goes from the CPU vendor's silicon through the confidential VM to the governance log.
+
+**Someone else's Safebox on a major cloud (Safenet)** — maximum trust for the verifier. You don't operate the box. You verify its attestation chain and check the governance log. Zero operational dependency on the operator.
+
+### Closing the physical access gap for third-party trust on bare metal
+
+On-prem hardware faces a question cloud deployments don't: "how do I know you didn't tamper with the hardware?" Two mechanisms close this:
+
+**fTPM (firmware TPM on the CPU die).** AMD's fTPM and Intel's Platform Trust Technology move the TPM into the CPU itself. There is no external LPC/SPI bus to tap with a hardware interposer. The only way to attack the TPM is to attack the CPU die — a nation-state capability, not a commercial threat.
+
+**Endorsement Key (EK) certificate chain.** Every TPM 2.0 chip has an Endorsement Key burned in at manufacturing by the vendor (Infineon, STMicro, Nuvoton, or AMD/Intel for fTPMs). The EK comes with a certificate chain back to the manufacturer's root CA. If someone physically replaces the TPM (or the entire motherboard), the EK changes. The governance log records the original EK; the mismatch is detectable remotely — the new chip cannot produce attestation quotes that chain back to the original endorsement. A verifier confirms: (1) the EK certificate chains to the manufacturer's root CA, (2) the EK matches the one registered in the governance log, (3) the attestation quote is signed by that specific chip.
+
+**Trust equivalence.** With fTPM + EK verification, on-prem trust bottoms out at the same place as cloud: the CPU vendor's silicon. On bare metal with AMD fTPM, you trust AMD's silicon. On AWS with SEV-SNP, you trust AMD's silicon. The trust assumption is identical. The only difference is that cloud adds a neutral-ground property (neither party controls the physical hardware), while on-prem requires EK verification to achieve the same assurance remotely.
+
+### When to use which
+
+Use bare metal when you are the only party that needs to trust the Safebox, or when third parties can verify via fTPM + EK attestation. Use cloud when the neutral-ground property matters (neither party owns the hardware) or when operational convenience outweighs the marginal trust benefit of physical control. The Safebox image, governance protocol, and attestation chain are identical in both cases.
+
 ## What Would Actually Compromise This
 
 After all 25 defense layers, four attack vectors remain:
@@ -360,11 +386,11 @@ The governance keys are ES256 keys on FIDO2 hardware tokens held by different hu
 
 **Difficulty:** Physical theft of multiple hardware tokens from multiple people in multiple locations.
 
-### 4. AMD SEV-SNP Silicon Bug (Nation-State)
+### 4. CPU Vendor Silicon Bug (Nation-State)
 
-AMD SEV-SNP provides hardware-encrypted VM memory. A bug in the silicon — not the firmware, the actual chip — could allow a hypervisor to read plaintext VM memory. This would expose the unsealed ZFS key and the instance's ephemeral private key. Such a bug would be an AMD product vulnerability affecting every SEV-SNP deployment globally.
+AMD SEV-SNP (cloud) and AMD/Intel fTPM (bare metal) both bottom out at the CPU vendor's silicon. A bug in the chip itself — not firmware, the actual silicon — could allow a hypervisor to read plaintext VM memory (cloud) or allow an attacker to forge TPM attestation quotes (bare metal). Such a bug would be a product vulnerability affecting every deployment globally — cloud and on-prem alike. AMD's entire server CPU business depends on the silicon being correct; the incentive to keep it honest is existential.
 
-**Difficulty:** Finding a hardware bug in AMD's memory encryption engine. Nation-state capability.
+**Difficulty:** Finding a hardware bug in AMD's memory encryption engine or TPM implementation. Nation-state capability. Applies equally to cloud and on-prem deployments — the trust assumption is the same.
 
 ## What Root Can't Do on a Production Safebox
 

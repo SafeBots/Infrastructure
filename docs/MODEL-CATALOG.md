@@ -11,6 +11,7 @@
 | Protocol | Endpoint | Purpose | SAFEBUX Cost |
 |----------|----------|---------|--------------|
 | **LLM** | `/v1/chat`, `/v1/complete`, `/v1/embed` | Text generation, reasoning | Medium |
+| **Decision** | `/v1/decision` | Calibrated scoring, routing, governance checks | Low |
 | **Image** | `/v1/image/generate` | Text-to-image, image editing | Medium-High |
 | **Speech** | `/v1/speech` | Text-to-speech synthesis | High |
 | **Transcription** | `/v1/transcribe` | Audio-to-text, diarization | Medium |
@@ -157,6 +158,68 @@
 - Dimensions: 1024
 - Use: Semantic search, RAG
 - SAFEBUX: 0.01/request
+
+---
+
+## ⚖️ Decision Protocol (`/v1/decision`)
+
+Non-autoregressive models that return calibrated probabilities for typed decisions (yes/no, multiple choice, rubric scoring) in a single forward pass. Used for governance checks, agent routing, code safety scoring, compliance evaluation, and egress allowlist decisions. These models do not generate text — they score fixed option sets, which makes them fast, deterministic, and auditable.
+
+The Decision protocol accepts one context (text, code, or multimodal input) and up to 1000 typed questions per request. Each question is one of:
+- **noul** (yes/no): returns probability that a condition holds
+- **choice** (multiple choice): picks from 2–255 options, returns normalized probabilities
+- **score** (ordered rubric): grades input on a rubric, returns weighted score and per-level probabilities
+
+Every answer includes a confidence score from 0 to 1. Low-confidence decisions can be routed to a human reviewer or a larger model.
+
+### **Tier 1: Governance (Fast Path)**
+
+**1. Laya (421M params)**
+- License: Apache-2.0
+- Source: Convai Innovations
+- Architecture: ModernBERT-large, non-autoregressive (true single forward pass, not logit extraction from a generative model)
+- Hardware: Any GPU; runs on CPU at 193–464ms/question
+- Speed: 32ms/question on GPU
+- Accuracy: 0.766 on the standard decision benchmark
+- Multilingual: mmBERT variant (322M) covers 100+ languages at 647MB
+- Checkpoint size: 808MB (English), 647MB (multilingual)
+- Use: Software Signer invariant checks, egress allowlist evaluation, agent tool routing, real-time governance decisions on the hot path. Small enough to keep always loaded alongside the main LLM.
+- SAFEBUX: 0.005/request
+
+**2. Laya-mmBERT (322M params)**
+- License: Apache-2.0
+- Architecture: mmBERT-base, non-autoregressive
+- Hardware: Any GPU or CPU
+- Speed: ~40ms/question on GPU
+- Multilingual: 100+ languages
+- Use: Same as Laya but for multilingual deployments. Smaller checkpoint, slightly lower accuracy.
+- SAFEBUX: 0.005/request
+
+### **Tier 2: Analysis (High Accuracy)**
+
+**3. Kev-4B (4B params)**
+- License: Apache-2.0
+- Source: Jared Palmer
+- Architecture: Qwen3.5-4B + LoRA adapter + pointer head
+- Hardware: 1× GPU with 8GB+ VRAM
+- Speed: ~50ms/question on modern GPU
+- Accuracy: 0.852 (vs Google Jev's 0.857)
+- API: Implements `/v1/systemone` (TypeSafe-compatible), mapped to `/v1/decision` by the runner
+- Use: Code safety scoring via Grokers, compliance checks, high-stakes governance decisions where calibration matters more than latency. The accuracy tier — use when the confidence score drives a real decision.
+- SAFEBUX: 0.02/request
+
+**4. Kev-9B (9B params)**
+- License: Apache-2.0
+- Architecture: Qwen3.5-9B + LoRA adapter + pointer head
+- Hardware: 1× GPU with 16GB+ VRAM
+- Speed: ~80ms/question on modern GPU
+- Accuracy: 0.852, Brier score 0.237 (best calibration among open models at this size)
+- Use: Same as Kev-4B for deployments with more GPU headroom. Better calibration on edge cases.
+- SAFEBUX: 0.03/request
+
+### **Tier 3: Fallback (No Dedicated Model)**
+
+For deployments that don't want a dedicated decision model, the **SemIf** library (Apache-2.0, github.com/TheoLeeCJ/SemIf-OpenJev) extracts calibrated probabilities from the logits of any loaded generative model (Qwen, Llama, etc.) via the existing vLLM runner. No additional model download, no additional GPU memory. Accuracy depends on the base model — typically 0.70–0.74 with Qwen3.5-4B, with ECE 0.020 (best calibration among all approaches). Use as a zero-cost starting point before adding a dedicated decision model.
 
 ---
 

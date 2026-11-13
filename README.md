@@ -56,7 +56,7 @@ The Safebox Infrastructure is designed around a formal security model we call **
 
 ### The formal model
 
-**Base case P(0):** The outer Safebox Console is a frozen Nix derivation. Its image is fully deterministic and reproducible — anyone can build it from source and verify the hash matches the deployed image. The Nix store is read-only; the image contains exactly one Qbix app (the Console) and nothing else. The base case is verifiable by any auditor, any time, without trusting anyone.
+**Base case P(0):** The outer Safebox Console is a frozen Nix derivation. The image is built once, snapshotted, and its dm-verity root hash is approved through M-of-N governance. Every subsequent launch boots the identical frozen bytes, and hardware attestation proves it. The verification model uses two images: an **audit image** (identical to production but with SSH access) lets an auditor log in, inspect every file, and satisfy themselves that the image does what it claims. Once satisfied, the auditor verifies the production image's hash against the audit image. The TPM attestation quote on every launch proves the running instance matches that hash. No rebuild from source is required — though because the image is built with Nix, an auditor who wants to go further *can* rebuild from the flake and compare outputs. That's a bonus, not the trust mechanism. The Nix store is read-only; the image contains exactly one Qbix app (the Console) and nothing else.
 
 **Inductive step P(n) → P(n+1):** Every state transition — image updates, configuration changes, key rotations, allowlist modifications — requires M-of-N governance where **at least one signer is the box's own attested software** (the Software Signer, described below). The Software Signer enforces structural invariants: it will not co-sign an image update that removes dm-verity, will not co-sign an allowlist change for a bare IP address, will not co-sign its own removal from the required signers list. Humans provide liveness (the system can evolve); code provides safety (the invariants cannot be violated).
 
@@ -115,8 +115,8 @@ The Inductive Security model is realized through a physical two-box architecture
 
 **Outer Safebox (Safebox Console):**
 
-- **Frozen Nix image.** Built with Nix for full reproducibility. The image is never updated in place — changes go through governed succession (a new image blessed by the existing M-of-N quorum including the Software Signer).
-- **Fully open source.** The entire outer Safebox is auditable by anyone. This is the trust anchor: you don't need to trust the operator, you verify the image hash.
+- **Frozen Nix image.** Built with Nix for hermeticity. The image is never updated in place — changes go through governed succession (a new image approved by the existing M-of-N quorum including the Software Signer). Every launch boots the exact same frozen bytes; the trust is in the governance-approved hash and the hardware measurement, not in who built it or how.
+- **Fully open source.** The entire outer Safebox is auditable by anyone. This is the trust anchor: you don't need to trust the operator, you verify the attestation quote against the governance-approved hash.
 - **One app only.** Runs exactly one Qbix app — the Safebox Console — which provides the governance interface for M-of-N operations: key management, allowlist changes, inner Safebox provisioning, audit log.
 - **Egress gateway.** All outbound traffic from the inner Safebox passes through the outer Safebox's egress allowlist. The allowlist is domain-based (no bare IPs), governed by M-of-N with the Software Signer as required co-signer. The outer Safebox judges the *shape* of outbound requests (destination domain, protocol) but not their *content* — it is a structural filter, not a content inspector.
 - **Key custody.** The outer Safebox holds the organization's governance keys, sealed to its own TPM. The inner Safebox requests signing operations through the private link; the outer Safebox applies governance policy before co-signing.
@@ -322,7 +322,8 @@ This is also the path for customers who want to embed Safebox via iframe under t
 | **Azure** | Comparable (ARM "Deploy to Azure" button) | `azure/terraform/` | ARM template is straightforward to author. Trusted Launch vTPM quotes, sealed keys; Confidential VM optional. |
 | **GCP** | Less polished — paste API key model | `gcp/terraform/` | GCP Marketplace has analogous one-click but UX is rougher. Shielded VM vTPM quotes, sealed keys; Confidential VM optional. |
 | **Oracle Cloud (OCI)** | Less polished | `oci/terraform/` | OCI Marketplace exists. Shielded instance vTPM quotes, sealed keys; SEV optional. |
-| **IBM Cloud / DigitalOcean / Hetzner / bare metal** | n/a | none | Not supported in 1.0: no built image, no vTPM-backed announce. |
+| **Bare metal (on-prem)** | n/a | planned | Physical TPM 2.0 (or fTPM on AMD/Intel CPUs). Strongest trust for self-hosted workloads — removes the cloud provider from the trust chain entirely. Third-party trust requires fTPM (TPM on the CPU die, closes bus interposer attacks) and EK certificate verification against the manufacturer's root CA (detects physical TPM swaps). Trust bottoms out at the same place as cloud: the CPU vendor's silicon. See SECURITY-HARDENING.md for the full on-prem trust model. |
+| **IBM Cloud / DigitalOcean / Hetzner** | n/a | none | Not supported in 1.0: no built image, no vTPM-backed announce. |
 
 For 1.0 we ship Path A polished on AWS only; the other three clouds launch the same image through Terraform. Path C works on every box launched this way.
 
@@ -374,7 +375,7 @@ The adversary the image is built against is someone with ordinary administrative
 
 The Infrastructure layer does NOT defend against:
 
-- **Compromised hypervisor or cloud provider.** The TPM is virtual and the provider runs it. The mitigation is confidential compute (SEV-SNP on AWS, GCP and Azure, SEV on OCI; TDX on Azure), which every Terraform module exposes as a boolean that defaults to off.
+- **Compromised hypervisor or cloud provider (cloud deployments).** The TPM is virtual and the provider runs it. The mitigation is confidential compute (SEV-SNP on AWS, GCP and Azure, SEV on OCI; TDX on Azure), which every Terraform module exposes as a boolean that defaults to off. On bare metal with fTPM (TPM on the CPU die), this trust assumption is eliminated — there is no hypervisor. Trust bottoms out at the CPU vendor's silicon in both cases.
 - **Compromised Safebox Node process.** If the plugin's Node side is rooted, it holds its own container's HMAC key and the system component will execute what that container is allowed to ask for. M-of-N governance lives inside Safebox, before the call. Per-request governance signatures (Ed25519) are the documented upgrade path for 1.1.
 
 ### What's defended

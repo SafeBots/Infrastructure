@@ -57,6 +57,26 @@ Each tenant now runs its own `safebox-system@<name>.service` instance as a dedic
 
 The centralized registration server and single-use registration tokens are removed. Safeboxes now generate an Ed25519 identity at first boot and publish a signed `safebox_announce` OCP claim to the Safenet transparency log via gossip. The claim carries a TPM quote (with confidential-compute report bound), the box's public key, and a time-limited `launch_authorization` signed by the owner's key. DNS relays and peer safeboxes verify announces independently using `verifyAnnounce.js`, which checks: box signature, owner authorization validity and expiry, quote-nonce binding, AK signature over the quote, PCR values against the blessed-image set, confidential-compute evidence, and a first-seen rule per safebox-id. This removes the control plane as a single point of failure and trust anchor.
 
+## Deterministic seal verified end-to-end
+
+The two-image workflow (audit Image A → deterministic seal → production Image B) has been verified empirically. An independent replay of the offline seal against a restored snapshot of Image A produced byte-identical output, matching the dm-verity root hash of the deployed Image B. The verification required pinning `E2FSCK_TIME` (ext4 backup superblock timestamps) and reusing the recorded dm-verity salt. With these controls, the seal is fully deterministic: the same audit image always produces the same production hash. The auditor verification flow — SSH into Image A, inspect, replay the seal offline, compare to the TPM attestation quote — is now a tested procedure, not a theoretical model.
+
+## On-premises deployment support (planned)
+
+Safebox does not require cloud infrastructure. A bare-metal server with a physical TPM 2.0 chip (or fTPM on the CPU die) provides equivalent trust properties. fTPM closes the bus interposer attack (no external LPC/SPI bus to tap). The Endorsement Key (EK) certificate chain, verified against the manufacturer's root CA, detects physical TPM swaps — a replaced chip has a different EK that the governance log catches. Trust bottoms out at the CPU vendor's silicon in both cloud and on-prem deployments. See `docs/SECURITY-HARDENING.md` for the full on-premises trust model.
+
+## TLS passthrough mode (optional)
+
+An optional TLS passthrough mode moves the TLS private key out of nginx into the tenant container. nginx routes encrypted TCP streams by SNI hostname without decrypting; the tenant app (e.g. the Qbix webserver) terminates TLS with its own key, inside gVisor, on the encrypted ZFS dataset. An nginx RCE in passthrough mode gives the attacker encrypted bytes they cannot read — a categorical improvement from the default TLS termination mode where nginx holds the key. ACME cert renewal continues to work through the HTTP-01 challenge on port 80. Set `SAFEBOX_TLS_MODE=passthrough` to enable. See `docs/TLS-PASSTHROUGH.md`.
+
+## Decision protocol and models
+
+Added a Decision protocol (`/v1/decision`) for calibrated scoring, routing, and governance checks. Non-autoregressive models return calibrated probabilities for typed decisions (yes/no, multiple choice, rubric scoring) in a single forward pass. Two open-source models added to the catalog: Laya (421M params, Apache-2.0, 32ms/question on GPU) for the governance fast path, and Kev-4B (Apache-2.0, 0.852 accuracy) for high-stakes code safety scoring via Grokers. See `docs/MODEL-CATALOG.md`.
+
+## Credential source abstraction
+
+Added a pluggable credential backend that fetches secrets from the platform's secrets manager instead of flat files on tmpfs. AWS Secrets Manager, GCP Secret Manager, and HashiCorp Vault (AppRole or Kubernetes auth) are supported. The file backend remains the default for dev and on-prem deployments. The change is backward-compatible: if `SAFEBOX_CREDENTIAL_BACKEND` is unset and the instance isn't on a detected cloud, nothing changes. See `docs/CREDENTIAL-SOURCE.md`.
+
 ## Known limitations
 
 Nothing in this release has booted on real hardware; every script passes static checks and the Node suites pass, but the boot chain, TPM sealing, verity, confidential-compute reports, and the four capture flows need a real build on each cloud. The expected PCR 8 value is modeled and must be confirmed from the first hardware boot. Two build-time digests (OpenSSL 3.5.5 and Node 22.22.2 tarballs) are fail-closed placeholders to be filled in. An attacker who wipes `/boot/safebox/` offline can force a fresh self-seal with blessed PCRs; the box cannot announce without a valid owner-signed launch authorization, and first boot now refuses if any pool already exists, but Safenet peers and DNS relays must also compare quotes against the blessed PCR set. OCI shapes with plain SEV (not SNP) produce no guest report and cannot register under the default policy. Safenet's `Discovery.js` needs a `safebox_announce` handler for gossip to land in the transparency log (out of scope for this repo).
